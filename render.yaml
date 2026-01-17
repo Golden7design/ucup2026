@@ -1,0 +1,48 @@
+services:
+  # Service Web pour l'API Laravel
+  - type: web
+    name: ucup-backend-laravel
+    env: php
+    # DOIT ÊTRE LA MÊME RÉGION QUE LA BDD (Oregon dans votre cas)
+    region: oregon 
+    plan: free
+    
+    # Commandes d'installation et de préparation de l'application
+    buildCommand: |
+      composer install --no-dev --optimize-autoloader
+      # Crée le lien symbolique vers le dossier storage/public (si utilisé)
+      php artisan storage:link
+      # Nettoyage des caches si des commandes ont été utilisées
+      php artisan config:clear
+    
+    # Commande de démarrage du serveur Laravel
+    startCommand: php artisan serve --host=0.0.0.0 --port=$PORT
+
+    # Variables d'environnement qui peuvent être passées en toute sécurité (non secrètes)
+    envVars:
+      # L'APP_KEY sera définie manuellement pour des raisons de sécurité
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: false
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: PORT
+        value: 10000
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://u-cup-tournament.vercel.app, http://localhost:3000
+      
+      # Connexion à la base de données via Render Blueprint
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ucup-database
+          property: connectionString
+      
+# Définition de la Base de Données existante (pour la lier au service Web)
+databases:
+  - name: ucup-database
+    region: oregon 
+    plan: free
+    # Doit correspondre à vos noms de BDD et utilisateur si vous laissez cette section
+    databaseName: ucup_db 
+    user: ucup_user

@@ -1,0 +1,62 @@
+# Ignorer les fichiers et répertoires inutiles pour le build Docker
+
+# Répertoires de développement
+.git
+.gitignore
+.gitattributes
+.gitmodules
+
+# Répertoires de dépendances
+node_modules/
+vendor/
+
+# Fichiers de configuration locaux
+.env
+.env.local
+.env.development
+.env.example
+.env.testing
+.env.vercel
+
+# Fichiers de build et cache
+bootstrap/cache/
+storage/framework/cache/
+storage/framework/sessions/
+storage/framework/views/
+storage/logs/
+
+# Fichiers IDE et éditeurs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Fichiers de build frontend
+public/build/
+public/hot
+
+# Fichiers de test
+phpunit.xml
+phpstan.neon
+
+# Documentation
+docs/
+
+# Fichiers temporaires
+*.log
+tmp/
+temp/
+
+# Fichiers de configuration spécifiques
+Dockerfile
+docker-compose.yml
+
+# Fichiers de déploiement spécifiques
+deploy/
+
+# Fichiers Terraform
+terraform/
+*.tf
+
+# Fichiers de configuration CI/CD
+.github/

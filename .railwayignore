@@ -1,0 +1,46 @@
+# Railway ignore file - files and directories to exclude from deployment
+
+# Node modules (will be installed during build)
+node_modules/
+
+# Build artifacts
+public/build/
+public/hot
+
+# Storage and cache
+storage/*
+!storage/app
+!storage/framework
+!storage/logs
+bootstrap/cache/*
+!bootstrap/cache/.gitignore
+
+# Environment files
+.env
+.env*.local
+.env*.backup
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+phpunit.xml
+
+# Documentation
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Railway specific
+.railway/
