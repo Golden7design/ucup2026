@@ -1,1 +1,1 @@
-web: composer install --no-dev --optimize-autoloader && npm ci && npm run build && php artisan config:cache && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORT
+web: mkdir -p bootstrap/cache storage/framework/{sessions,views,cache} storage/logs && chmod -R 775 bootstrap/cache storage && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORT
