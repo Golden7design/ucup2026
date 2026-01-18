@@ -1,7 +1,8 @@
-import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import HeadingSmall from '@/components/heading-small';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
+import { useForm } from '@inertiajs/react';
+import { route } from 'ziggy-js';
 import {
     Dialog,
     DialogClose,
@@ -18,6 +19,9 @@ import { useRef } from 'react';
 
 export default function DeleteUser() {
     const passwordInput = useRef<HTMLInputElement>(null);
+    const form = useForm({
+        password: '',
+    });
 
     return (
         <div className="space-y-6">
@@ -54,15 +58,18 @@ export default function DeleteUser() {
                         </DialogDescription>
 
                         <Form
-                            {...ProfileController.destroy.form()}
-                            options={{
-                                preserveScroll: true,
+                            method="delete"
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                form.delete(route('profile.destroy'), {
+                                    preserveScroll: true,
+                                    onError: () => passwordInput.current?.focus(),
+                                    onSuccess: () => form.reset(),
+                                });
                             }}
-                            onError={() => passwordInput.current?.focus()}
-                            resetOnSuccess
                             className="space-y-6"
                         >
-                            {({ resetAndClearErrors, processing, errors }) => (
+                            {() => (
                                 <>
                                     <div className="grid gap-2">
                                         <Label
@@ -79,18 +86,18 @@ export default function DeleteUser() {
                                             ref={passwordInput}
                                             placeholder="Password"
                                             autoComplete="current-password"
+                                            value={form.data.password}
+                                            onChange={(e) => form.setData('password', e.currentTarget.value)}
                                         />
 
-                                        <InputError message={errors.password} />
+                                        <InputError message={form.errors.password} />
                                     </div>
 
                                     <DialogFooter className="gap-2">
                                         <DialogClose asChild>
                                             <Button
                                                 variant="secondary"
-                                                onClick={() =>
-                                                    resetAndClearErrors()
-                                                }
+                                                onClick={() => form.reset()}
                                             >
                                                 Cancel
                                             </Button>
@@ -98,7 +105,7 @@ export default function DeleteUser() {
 
                                         <Button
                                             variant="destructive"
-                                            disabled={processing}
+                                            disabled={form.processing}
                                             asChild
                                         >
                                             <button
