@@ -234,6 +234,15 @@
                         Mettre à jour
                     </button>
                 </form>
+
+                <div class="flex items-center space-x-2">
+                    <button type="button" id="pause-timer-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm">
+                        Pause chrono
+                    </button>
+                    <button type="button" id="resume-timer-btn" class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm">
+                        Reprendre chrono
+                    </button>
+                </div>
                 
                 @if($match->status === 'finished')
                 <a href="{{ route('admin.matches.stats.edit', $match) }}" class="text-blue-500 hover:text-blue-400 text-sm ml-4">
@@ -663,6 +672,48 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+        const pauseTimerBtn = document.getElementById('pause-timer-btn');
+        const resumeTimerBtn = document.getElementById('resume-timer-btn');
+
+        function postTimerAction(url, successMessage) {
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Erreur lors de la mise à jour du chrono.');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (!data || !data.success) {
+                    throw new Error(data?.message || 'Action impossible.');
+                }
+                alert(successMessage);
+            })
+            .catch(error => {
+                console.error(error);
+                alert(error.message);
+            });
+        }
+
+        if (pauseTimerBtn) {
+            pauseTimerBtn.addEventListener('click', () => {
+                postTimerAction('{{ route('admin.match-timer.pause', $match) }}', 'Chrono mis en pause.');
+            });
+        }
+
+        if (resumeTimerBtn) {
+            resumeTimerBtn.addEventListener('click', () => {
+                postTimerAction('{{ route('admin.match-timer.resume', $match) }}', 'Chrono repris.');
+            });
+        }
+
         const eventTypeSelect = document.getElementById('event_type');
         const teamSelect = document.getElementById('event_team_id');
         const playerMainSelect = document.getElementById('player_id');

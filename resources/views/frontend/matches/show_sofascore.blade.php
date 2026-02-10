@@ -566,6 +566,9 @@
                     <div class="text-sm mt-2 opacity-90">
                         {{ $match->match_date->format('d/m/Y H:i') }}
                     </div>
+                    <div class="text-lg mt-2 font-bold" id="elapsed-time" style="{{ in_array($match->status, ['live', 'halftime']) ? '' : 'display:none;' }}">
+                        {{ $match->getFormattedTime() }}
+                    </div>
                 </div>
                 
                 <div class="text-center">
@@ -598,7 +601,7 @@
                 <h3 class="text-xl font-bold mb-4 text-white">Derniers événements</h3>
                 @if($match->matchEvents->count() > 0)
                     @foreach($match->matchEvents->sortByDesc('minute')->take(5) as $event)
-                        <div class="event-item-sofascore">
+                        <div class="event-item-sofascore" data-event-id="{{ $event->id }}">
                             <div class="event-minute-sofascore">{{ $event->minute }}'</div>
                             <div class="event-icon-sofascore 
                                 @if($event->event_type === 'goal') event-goal
@@ -757,7 +760,7 @@
                 
                 @if($match->matchEvents->count() > 0)
                     @foreach($match->matchEvents->sortByDesc('minute') as $event)
-                        <div class="event-item-sofascore">
+                        <div class="event-item-sofascore" data-event-id="{{ $event->id }}">
                             <div class="event-minute-sofascore">{{ $event->minute }}'</div>
                             <div class="event-icon-sofascore 
                                 @if($event->event_type === 'goal') event-goal
@@ -1083,180 +1086,483 @@
         }
     }
     
+    const seenEventIds = new Set();
+
     // Fonction pour ajouter un nouvel événement
     function addEvent(event) {
-        const eventsContainer = document.querySelector('#events .events-section-sofascore');
-        if (!eventsContainer) return;
-        
-        const eventElement = document.createElement('div');
-        eventElement.className = 'event-item-sofascore new';
-        eventElement.style.opacity = '1';
-        eventElement.style.transform = 'translateX(0)';
-        
+        const eventId = event.id || event.event_id;
+        if (eventId) {
+            if (seenEventIds.has(eventId) || document.querySelector(`[data-event-id="${eventId}"]`)) {
+                return;
+            }
+            seenEventIds.add(eventId);
+        }
+        const containers = document.querySelectorAll('#events .events-section-sofascore, #overview .events-section-sofascore');
+        if (!containers.length) return;
+
+        const playerName = (event.player && event.player.full_name)
+            ? event.player.full_name
+            : (event.player_name || 'Joueur inconnu');
+        const assistName = (event.assist_player && event.assist_player.full_name)
+            ? event.assist_player.full_name
+            : (event.assist_name || null);
+        const outPlayerName = (event.out_player && event.out_player.full_name)
+            ? event.out_player.full_name
+            : (event.out_player_name || 'Joueur inconnu');
+
         let eventIcon = '⚽';
         let eventClass = 'event-goal';
         let eventDescription = `
-            <span class="player-name-sofascore">${event.player.full_name}</span> 
+            <span class="player-name-sofascore">${playerName}</span> 
             a marqué
-            ${event.assist_player ? ' (assist: ' + event.assist_player.full_name + ')' : ''}
+            ${assistName ? ' (assist: ' + assistName + ')' : ''}
         `;
-        
+        let notificationMessage = `${playerName} a marqué pour ${event.team_id === {{ $match->home_team_id }} ? '{{ $match->homeTeam->university->short_name }}' : '{{ $match->awayTeam->university->short_name }}'}`;
+
         switch(event.event_type) {
             case 'goal':
                 eventIcon = '⚽';
                 eventClass = 'event-goal';
                 eventDescription = `
-                    <span class="player-name-sofascore">${event.player.full_name}</span> 
+                    <span class="player-name-sofascore">${playerName}</span> 
                     a marqué
-                    ${event.assist_player ? ' (assist: ' + event.assist_player.full_name + ')' : ''}
+                    ${assistName ? ' (assist: ' + assistName + ')' : ''}
                 `;
+                notificationMessage = `${playerName} a marqué pour ${event.team_id === {{ $match->home_team_id }} ? '{{ $match->homeTeam->university->short_name }}' : '{{ $match->awayTeam->university->short_name }}'}`;
                 break;
             case 'yellow_card':
                 eventIcon = '⚠';
                 eventClass = 'event-card';
                 eventDescription = `
-                    <span class="player-name-sofascore">${event.player.full_name}</span> 
+                    <span class="player-name-sofascore">${playerName}</span> 
                     a reçu un carton jaune
                 `;
+                notificationMessage = `${playerName} a reçu un carton jaune pour ${event.team_id === {{ $match->home_team_id }} ? '{{ $match->homeTeam->university->short_name }}' : '{{ $match->awayTeam->university->short_name }}'}`;
                 break;
             case 'red_card':
                 eventIcon = '❌';
                 eventClass = 'event-card';
                 eventDescription = `
-                    <span class="player-name-sofascore">${event.player.full_name}</span> 
+                    <span class="player-name-sofascore">${playerName}</span> 
                     a reçu un carton rouge
                 `;
+                notificationMessage = `${playerName} a reçu un carton rouge pour ${event.team_id === {{ $match->home_team_id }} ? '{{ $match->homeTeam->university->short_name }}' : '{{ $match->awayTeam->university->short_name }}'}`;
                 break;
             case 'substitution_in':
                 eventIcon = '↔';
                 eventClass = 'event-sub';
                 eventDescription = `
-                    <span class="player-name-sofascore">${event.player.full_name}</span> 
-                    remplace ${event.out_player.full_name}
+                    <span class="player-name-sofascore">${playerName}</span> 
+                    remplace ${outPlayerName}
                 `;
+                notificationMessage = `${playerName} remplace ${outPlayerName} pour ${event.team_id === {{ $match->home_team_id }} ? '{{ $match->homeTeam->university->short_name }}' : '{{ $match->awayTeam->university->short_name }}'}`;
                 break;
         }
-        
-        const teamName = event.team_id === {{ $match->home_team_id }} 
-            ? '{{ $match->homeTeam->university->short_name }}' 
-            : '{{ $match->awayTeam->university->short_name }}';
-        
-        eventElement.innerHTML = `
-            <div class="event-minute-sofascore">${event.minute}'</div>
-            <div class="event-icon-sofascore ${eventClass}">${eventIcon}</div>
-            <div class="event-description-sofascore">
-                ${eventDescription}
-                pour ${teamName}
-            </div>
-        `;
-        
-        eventsContainer.insertBefore(eventElement, eventsContainer.firstChild);
-        eventElement.style.animation = 'newEventPulse 1.5s ease-out';
+
+        const teamName = event.team_name
+            ? event.team_name
+            : (event.team_id === {{ $match->home_team_id }}
+                ? '{{ $match->homeTeam->university->short_name }}'
+                : '{{ $match->awayTeam->university->short_name }}');
+
+        function buildEventElement() {
+            const eventElement = document.createElement('div');
+            eventElement.className = 'event-item-sofascore new';
+            if (eventId) {
+                eventElement.dataset.eventId = eventId;
+            }
+            eventElement.style.opacity = '1';
+            eventElement.style.transform = 'translateX(0)';
+            eventElement.innerHTML = `
+                <div class="event-minute-sofascore">${event.minute}'</div>
+                <div class="event-icon-sofascore ${eventClass}">${eventIcon}</div>
+                <div class="event-description-sofascore">
+                    ${eventDescription}
+                    pour ${teamName}
+                </div>
+            `;
+            return eventElement;
+        }
+
+        containers.forEach(container => {
+            const placeholder = container.querySelector('p');
+            if (placeholder) {
+                placeholder.remove();
+            }
+            const eventElement = buildEventElement();
+            container.insertBefore(eventElement, container.firstChild);
+            eventElement.style.animation = 'newEventPulse 1.5s ease-out';
+
+            if (container.closest('#overview')) {
+                const items = container.querySelectorAll('.event-item-sofascore');
+                if (items.length > 5) {
+                    items[items.length - 1].remove();
+                }
+            }
+        });
+
+        showNotification(notificationMessage, 'success');
     }
     
     // Variables pour suivre les timestamps
     let lastEventTime = '1970-01-01 00:00:00';
     let lastUpdateTime = '1970-01-01 00:00:00';
+
+    const timerState = {
+        status: '{{ $match->status }}',
+        isPaused: {{ $match->timer_paused_at ? 'true' : 'false' }},
+        elapsedSeconds: {{ (int) $match->getElapsedTime() }},
+        tickInterval: null,
+    };
+
+    function formatSeconds(totalSeconds) {
+        const safe = Math.max(0, Math.floor(totalSeconds || 0));
+        const minutes = String(Math.floor(safe / 60)).padStart(2, '0');
+        const seconds = String(safe % 60).padStart(2, '0');
+        return `${minutes}:${seconds}`;
+    }
+
+    function renderTimer() {
+        const timeEl = document.getElementById('elapsed-time');
+        if (timeEl) {
+            timeEl.textContent = formatSeconds(timerState.elapsedSeconds);
+        }
+    }
+
+    function applyTimerState(next) {
+        if (!next || typeof next !== 'object') return;
+
+        if (next.status !== undefined && next.status !== null) {
+            timerState.status = next.status;
+        }
+
+        if (next.is_paused !== undefined) {
+            timerState.isPaused = !!next.is_paused;
+        } else if (next.status === 'live') {
+            timerState.isPaused = false;
+        }
+
+        if (next.elapsed_time !== undefined && next.elapsed_time !== null) {
+            timerState.elapsedSeconds = Math.max(0, Math.floor(next.elapsed_time));
+        }
+
+        if (['halftime', 'finished', 'scheduled'].includes(timerState.status)) {
+            timerState.isPaused = true;
+        }
+
+        renderTimer();
+
+        const timeEl = document.getElementById('elapsed-time');
+        if (timeEl) {
+            timeEl.style.display = (timerState.status === 'live' || timerState.status === 'halftime') ? '' : 'none';
+        }
+
+        const statusEl = document.querySelector('.match-status-sofascore');
+        if (statusEl) {
+            if (timerState.status === 'live' && timerState.isPaused) {
+                statusEl.textContent = 'PAUSE';
+            } else {
+                const map = {
+                    live: 'EN DIRECT',
+                    halftime: 'MI-TEMPS',
+                    finished: 'TERMINÉ',
+                    scheduled: 'À VENIR'
+                };
+                statusEl.textContent = map[timerState.status] || String(timerState.status || '').toUpperCase();
+            }
+        }
+    }
+
+    function startLocalTimer() {
+        if (timerState.tickInterval) {
+            return;
+        }
+
+        timerState.tickInterval = setInterval(() => {
+            if (timerState.status === 'live' && !timerState.isPaused) {
+                timerState.elapsedSeconds += 1;
+                renderTimer();
+            }
+        }, 1000);
+    }
     
-    // Mise à jour en temps réel pour les matchs en direct
-    @if($match->status === 'live')
+    // Mise à jour en temps réel (tous statuts)
         console.log('Activation de la synchronisation en temps réel pour le match {{ $match->id }}');
-        
-        // Fonction pour tester la connectivité API
-        function testApiConnectivity() {
-            const testUrl = '/api/matches/{{ $match->id }}';
-            console.log('Test de connectivité API:', testUrl);
-            
-            fetch(testUrl)
-                .then(response => {
-                    if (response.ok) {
-                        console.log('✅ API accessible - Statut:', response.status);
-                    } else {
-                        console.error('❌ API inaccessible - Statut:', response.status);
+
+        function updateElapsedTime() {
+            fetch(`/api/matches/{{ $match->id }}/timer`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data || !data.success) return;
+                    applyTimerState({
+                        status: data.status,
+                        is_paused: data.is_paused,
+                        elapsed_time: data.elapsed_time,
+                    });
+                    if (data.label) {
+                        const statusEl = document.querySelector('.match-status-sofascore');
+                        if (statusEl) {
+                            statusEl.textContent = data.label;
+                        }
                     }
                 })
-                .catch(error => {
-                    console.error('❌ Erreur de connexion API:', error.message);
-                });
+                .catch(() => {});
         }
-        
-        // Tester la connectivité immédiatement
-        testApiConnectivity();
-        
-        // Fonction pour récupérer les mises à jour
-        function fetchUpdates() {
-            // Essayer différentes URLs pour résoudre le problème 404
-            const urlsToTry = [
-                `/api/matches/{{ $match->id }}/live-update?last_event_time=${encodeURIComponent(lastEventTime)}&last_update_time=${encodeURIComponent(lastUpdateTime)}`,
-                `/matches/{{ $match->id }}/live-update?last_event_time=${encodeURIComponent(lastEventTime)}&last_update_time=${encodeURIComponent(lastUpdateTime)}`,
-                `{{ url("/api/matches/{$match->id}/live-update") }}?last_event_time=${encodeURIComponent(lastEventTime)}&last_update_time=${encodeURIComponent(lastUpdateTime)}`
-            ];
-            
-            function tryNextUrl(index = 0) {
-                if (index >= urlsToTry.length) {
-                    console.error('❌ Toutes les URLs ont échoué');
-                    return;
+
+        function setStatusLabel(status) {
+            const statusEl = document.querySelector('.match-status-sofascore');
+            if (!statusEl) return;
+
+            const map = {
+                live: 'EN DIRECT',
+                halftime: 'MI-TEMPS',
+                finished: 'TERMINÉ',
+                scheduled: 'À VENIR'
+            };
+
+            statusEl.textContent = map[status] || String(status || '').toUpperCase();
+        }
+
+        function getCurrentScore() {
+            const scoreElement = document.querySelector('.score-sofascore');
+            if (!scoreElement) return { home: 0, away: 0 };
+            const parts = scoreElement.textContent.split('-').map(part => part.trim());
+            return {
+                home: parts[0] ?? 0,
+                away: parts[1] ?? 0
+            };
+        }
+
+        function updateScoreFromPayload(homeScore, awayScore) {
+            if (homeScore === undefined && awayScore === undefined) {
+                return;
+            }
+
+            const current = getCurrentScore();
+            const nextHome = homeScore !== undefined && homeScore !== null ? homeScore : current.home;
+            const nextAway = awayScore !== undefined && awayScore !== null ? awayScore : current.away;
+            if (String(nextHome) === String(current.home) && String(nextAway) === String(current.away)) {
+                return;
+            }
+            updateMatchData({
+                match: {
+                    home_score: nextHome,
+                    away_score: nextAway
                 }
-                
-                const url = urlsToTry[index];
-                console.log(`Tentative ${index + 1}/${urlsToTry.length} - URL:`, url);
-                
-                fetch(url)
+            });
+        }
+
+        function updateStatFromPayload(statName, teamSide, value) {
+            if (!statName || !teamSide || value === undefined) return;
+            if (statName === 'score') return;
+
+            const statsPayload = {};
+            statsPayload[statName] = { [teamSide]: value };
+            updateMatchData({ statistics: statsPayload });
+        }
+
+        function removeEventById(eventId) {
+            if (!eventId) return;
+            document.querySelectorAll(`[data-event-id="${eventId}"]`).forEach(el => el.remove());
+        }
+
+        function startPolling() {
+            function testApiConnectivity() {
+                const testUrl = '/api/matches/{{ $match->id }}';
+                console.log('Test de connectivité API:', testUrl);
+
+                fetch(testUrl)
                     .then(response => {
-                        if (!response.ok) {
-                            console.error(`Échec avec l'URL ${index + 1} - Statut:`, response.status);
-                            tryNextUrl(index + 1);
-                            return;
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        if (data) {
-                            console.log('✅ Succès avec l\'URL:', url);
-                            console.log('Réponse API complète:', data);
-                            
-                            if (data.success && data.match_updated) {
-                                console.log('Mise à jour détectée - Score:', data.match.home_score + ' - ' + data.match.away_score);
-                                
-                                // Mettre à jour les timestamps
-                                if (data.last_event_time) {
-                                    lastEventTime = data.last_event_time;
-                                }
-                                if (data.match && data.match.updated_at) {
-                                    lastUpdateTime = data.match.updated_at;
-                                }
-                                
-                                updateMatchData(data);
-                                
-                                // Ajouter les nouveaux événements
-                                if (data.new_events && data.new_events.length > 0) {
-                                    console.log('Nouveaux événements:', data.new_events.length);
-                                    data.new_events.forEach(event => addEvent(event));
-                                }
-                            } else {
-                                console.log('Aucune mise à jour détectée');
-                            }
+                        if (response.ok) {
+                            console.log('✅ API accessible - Statut:', response.status);
+                        } else {
+                            console.error('❌ API inaccessible - Statut:', response.status);
                         }
                     })
                     .catch(error => {
-                        console.error(`Erreur avec l'URL ${index + 1}:`, error.message);
-                        tryNextUrl(index + 1);
+                        console.error('❌ Erreur de connexion API:', error.message);
                     });
             }
-            
-            tryNextUrl(0);
+
+            testApiConnectivity();
+
+            function fetchUpdates() {
+                const urlsToTry = [
+                    `/api/matches/{{ $match->id }}/live-update?last_event_time=${encodeURIComponent(lastEventTime)}&last_update_time=${encodeURIComponent(lastUpdateTime)}`,
+                    `/matches/{{ $match->id }}/live-update?last_event_time=${encodeURIComponent(lastEventTime)}&last_update_time=${encodeURIComponent(lastUpdateTime)}`,
+                    `{{ url("/api/matches/{$match->id}/live-update") }}?last_event_time=${encodeURIComponent(lastEventTime)}&last_update_time=${encodeURIComponent(lastUpdateTime)}`
+                ];
+
+                function tryNextUrl(index = 0) {
+                    if (index >= urlsToTry.length) {
+                        console.error('❌ Toutes les URLs ont échoué');
+                        return;
+                    }
+
+                    const url = urlsToTry[index];
+                    console.log(`Tentative ${index + 1}/${urlsToTry.length} - URL:`, url);
+
+                    fetch(url)
+                        .then(response => {
+                            if (!response.ok) {
+                                console.error(`Échec avec l'URL ${index + 1} - Statut:`, response.status);
+                                tryNextUrl(index + 1);
+                                return;
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data) {
+                                console.log('✅ Succès avec l'URL:', url);
+                                console.log('Réponse API complète:', data);
+
+                                if (data.success) {
+                                    if (data.match_updated) {
+                                        console.log('Mise à jour détectée - Score:', data.match.home_score + ' - ' + data.match.away_score);
+                                        updateMatchData(data);
+                                    }
+
+                                    if (data.last_event_time) {
+                                        lastEventTime = data.last_event_time;
+                                    }
+                                    if (data.match && data.match.updated_at) {
+                                        lastUpdateTime = data.match.updated_at;
+                                    }
+
+                                    if (data.new_events && data.new_events.length > 0) {
+                                        console.log('Nouveaux événements:', data.new_events.length);
+                                        data.new_events.forEach(event => addEvent(event));
+                                    } else if (!data.match_updated) {
+                                        console.log('Aucune mise à jour détectée');
+                                    }
+                                }
+                            }
+                        })
+                        .catch(error => {
+                            console.error(`Erreur avec l'URL ${index + 1}:`, error.message);
+                            tryNextUrl(index + 1);
+                        });
+                }
+
+                tryNextUrl(0);
+            }
+
+            const updateInterval = setInterval(fetchUpdates, 2000);
+            fetchUpdates();
+
+            showNotification('Mises à jour en temps réel activées (polling)', 'info');
+
+            window.addEventListener('beforeunload', () => {
+                clearInterval(updateInterval);
+            });
         }
-        
-        // Mise à jour toutes les 2 secondes pour une réactivité maximale
-        const updateInterval = setInterval(fetchUpdates, 2000);
-        
-        // Première mise à jour immédiate
-        fetchUpdates();
-        
-        // Nettoyage lors du changement de page
+
+        function startEventPolling() {
+            function fetchEventsOnly() {
+                const url = `/api/matches/{{ $match->id }}/live-update?last_event_time=${encodeURIComponent(lastEventTime)}&last_update_time=${encodeURIComponent(lastUpdateTime)}`;
+                fetch(url)
+                    .then(response => {
+                        if (!response.ok) return;
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (!data || !data.success) return;
+
+                        if (data.last_event_time) {
+                            lastEventTime = data.last_event_time;
+                        }
+                        if (data.match && data.match.updated_at) {
+                            lastUpdateTime = data.match.updated_at;
+                        }
+
+                        if (data.new_events && data.new_events.length > 0) {
+                            data.new_events.forEach(event => addEvent(event));
+                        }
+                    })
+                    .catch(() => {});
+            }
+
+            fetchEventsOnly();
+            const eventsInterval = setInterval(fetchEventsOnly, 3000);
+
+            window.addEventListener('beforeunload', () => {
+                clearInterval(eventsInterval);
+            });
+        }
+
+        function setupRealtime() {
+            if (!window.Echo) {
+                console.warn('[Realtime] Echo non initialisé, bascule en polling.');
+                startLocalTimer();
+                updateElapsedTime();
+                const elapsedTimeInterval = setInterval(updateElapsedTime, 15000);
+                window.addEventListener('beforeunload', () => {
+                    clearInterval(elapsedTimeInterval);
+                });
+                startPolling();
+                return;
+            }
+
+            const channel = window.Echo.channel('match.{{ $match->id }}');
+
+            channel
+                .listen('MatchEventOccurred', function (payload) {
+                    if (payload.action === 'deleted') {
+                        removeEventById(payload.event_id);
+                    }
+
+                    if (payload.new_event_data || payload.event_type) {
+                        addEvent(payload.new_event_data || payload);
+                    }
+
+                    if (payload.home_score !== undefined || payload.away_score !== undefined) {
+                        updateScoreFromPayload(payload.home_score, payload.away_score);
+                    }
+                })
+                .listen('MatchStatusOrStatsUpdated', function (payload) {
+                    if (payload.status) {
+                        setStatusLabel(payload.status);
+                    }
+
+                    if (payload.stat_name && payload.team_side) {
+                        const value = payload[`${payload.team_side}_${payload.stat_name}`];
+                        if (payload.stat_name === 'score') {
+                            updateScoreFromPayload(payload.home_score, payload.away_score);
+                        } else {
+                            updateStatFromPayload(payload.stat_name, payload.team_side, value);
+                        }
+                    }
+
+                    if (payload.home_score !== undefined || payload.away_score !== undefined) {
+                        updateScoreFromPayload(payload.home_score, payload.away_score);
+                    }
+
+                    if (payload.elapsed_time !== undefined || payload.timer_paused_at !== undefined || payload.status) {
+                        applyTimerState({
+                            status: payload.status,
+                            is_paused: payload.timer_paused_at !== undefined ? !!payload.timer_paused_at : undefined,
+                            elapsed_time: payload.elapsed_time,
+                        });
+                    }
+                });
+
+            channel.listenToAll(function (eventName, payload) {
+                if (!payload) return;
+                if (payload.new_event_data || payload.event_type) {
+                    addEvent(payload.new_event_data || payload);
+                }
+            });
+
+            showNotification('Mises à jour en temps réel activées', 'success');
+        }
+
+        startLocalTimer();
+        updateElapsedTime();
+        setupRealtime();
+        startEventPolling();
+        const elapsedTimeInterval = setInterval(updateElapsedTime, 15000);
         window.addEventListener('beforeunload', () => {
-            clearInterval(updateInterval);
+            clearInterval(elapsedTimeInterval);
         });
-    @endif
 </script>
 @endsection

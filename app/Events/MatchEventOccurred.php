@@ -4,11 +4,11 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast; // <-- AJOUTEZ CECI
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class MatchEventOccurred implements ShouldBroadcast // <-- AJOUTEZ CECI
+class MatchEventOccurred implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
@@ -39,11 +39,10 @@ class MatchEventOccurred implements ShouldBroadcast // <-- AJOUTEZ CECI
     }
 
     /**
-     * Le nom que l'événement aura en JavaScript.
-     * @return string
+     * Données diffusées côté client.
      */
-    public function broadcastAs()
+    public function broadcastWith()
     {
-        return 'match.event.added';
+        return array_merge(['match_id' => $this->matchId], $this->eventData);
     }
 }

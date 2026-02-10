@@ -168,7 +168,7 @@
                     <div class="space-y-2" id="match-events-{{ $match->id }}">
                         @if($match->matchEvents && $match->matchEvents->count() > 0)
                             @foreach($match->matchEvents->sortByDesc('minute')->take(3) as $event)
-                            <div class="event-item p-2 rounded-lg bg-gray-800">
+                            <div class="event-item p-2 rounded-lg bg-gray-800" data-event-id="{{ $event->id }}">
                                 <div class="flex items-center">
                                     <div class="mr-2">
                                         <span class="text-gray-400 text-xs">{{ $event->minute }}'</span>
@@ -247,7 +247,116 @@ document.addEventListener('DOMContentLoaded', function() {
     // Mettre à jour chaque minute
     setInterval(updateMatchTime{{ $match->id }}, 60000);
 
-    // Fonction pour rafraîchir les données du match {{ $match->id }}
+    function applyScores{{ $match->id }}(homeScore, awayScore) {
+        if (homeScore !== undefined) {
+            const homeEl = document.getElementById('home-score-{{ $match->id }}');
+            if (homeEl) homeEl.textContent = homeScore;
+        }
+        if (awayScore !== undefined) {
+            const awayEl = document.getElementById('away-score-{{ $match->id }}');
+            if (awayEl) awayEl.textContent = awayScore;
+        }
+    }
+
+    function applyStats{{ $match->id }}(payload) {
+        if (payload.home_fouls !== undefined) {
+            const el = document.getElementById('home-fouls-{{ $match->id }}');
+            if (el) el.textContent = payload.home_fouls;
+        }
+        if (payload.away_fouls !== undefined) {
+            const el = document.getElementById('away-fouls-{{ $match->id }}');
+            if (el) el.textContent = payload.away_fouls;
+        }
+        if (payload.home_corners !== undefined) {
+            const el = document.getElementById('home-corners-{{ $match->id }}');
+            if (el) el.textContent = payload.home_corners;
+        }
+        if (payload.away_corners !== undefined) {
+            const el = document.getElementById('away-corners-{{ $match->id }}');
+            if (el) el.textContent = payload.away_corners;
+        }
+    }
+
+    function removeEventById{{ $match->id }}(eventId) {
+        if (!eventId) return;
+        document.querySelectorAll(`#match-events-{{ $match->id }} [data-event-id="${eventId}"]`).forEach(el => el.remove());
+    }
+
+    const seenEventIds{{ $match->id }} = new Set();
+
+    function addRealtimeEvent{{ $match->id }}(event) {
+        const eventsContainer = document.getElementById('match-events-{{ $match->id }}');
+        if (!eventsContainer) return;
+
+        const placeholder = eventsContainer.querySelector('p');
+        if (placeholder) {
+            placeholder.remove();
+        }
+
+        const eventElement = document.createElement('div');
+        eventElement.className = 'event-item new p-2 rounded-lg bg-gray-800';
+        const eventId = event.id || event.event_id;
+        if (eventId) {
+            if (seenEventIds{{ $match->id }}.has(eventId) || eventsContainer.querySelector(`[data-event-id="${eventId}"]`)) {
+                return;
+            }
+            seenEventIds{{ $match->id }}.add(eventId);
+            eventElement.dataset.eventId = eventId;
+        }
+
+        let eventIcon = '';
+        if (event.event_type === 'goal') {
+            eventIcon = '<span class="text-green-400">⚽ BUT!</span>';
+        } else if (event.event_type === 'yellow_card') {
+            eventIcon = '<span class="text-yellow-400">🟨 Carton jaune</span>';
+        } else if (event.event_type === 'red_card') {
+            eventIcon = '<span class="text-red-400">🟥 Carton rouge</span>';
+        } else if (event.event_type === 'substitution_in') {
+            eventIcon = '<span class="text-blue-400">🔄 Remplacement</span>';
+        }
+
+        const teamName = event.team_id == {{ $match->home_team_id }}
+            ? '{{ $match->homeTeam->university->short_name }}'
+            : '{{ $match->awayTeam->university->short_name }}';
+
+        const playerName = (event.player && event.player.full_name)
+            ? event.player.full_name
+            : (event.player_name || 'Joueur inconnu');
+
+        eventElement.innerHTML = `
+            <div class="flex items-center">
+                <div class="mr-2">
+                    <span class="text-gray-400 text-xs">${event.minute}'</span>
+                </div>
+                <div class="mr-2">
+                    <div class="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center">
+                        <i class="fas fa-user text-xs"></i>
+                    </div>
+                </div>
+                <div class="flex-1">
+                    <div class="flex justify-between items-center">
+                        <div class="font-bold text-sm">
+                            ${eventIcon}
+                            <span class="ml-1">${playerName}</span>
+                        </div>
+                        <span class="text-xs text-gray-400">${teamName}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        if (eventsContainer.firstChild) {
+            eventsContainer.insertBefore(eventElement, eventsContainer.firstChild);
+        } else {
+            eventsContainer.appendChild(eventElement);
+        }
+
+        const items = eventsContainer.querySelectorAll('.event-item');
+        if (items.length > 3) {
+            items[items.length - 1].remove();
+        }
+    }
+
     function refreshMatchData{{ $match->id }}() {
         const matchId = {{ $match->id }};
         let lastEventTime = @json($match->matchEvents && $match->matchEvents->count() > 0 ?
@@ -258,15 +367,10 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    // Mettre à jour le score
-                    if (data.match.home_score !== undefined) {
-                        document.getElementById('home-score-' + matchId).textContent = data.match.home_score;
-                    }
-                    if (data.match.away_score !== undefined) {
-                        document.getElementById('away-score-' + matchId).textContent = data.match.away_score;
+                    if (data.match.home_score !== undefined || data.match.away_score !== undefined) {
+                        applyScores{{ $match->id }}(data.match.home_score, data.match.away_score);
                     }
 
-                    // Mettre à jour le temps de jeu
                     if (data.match.match_time !== null) {
                         const timeElement = document.getElementById('match-time-' + matchId);
                         if (timeElement) {
@@ -274,71 +378,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     }
 
-                    // Mettre à jour les statistiques
-                    if (data.match.home_fouls !== undefined) {
-                        document.getElementById('home-fouls-' + matchId).textContent = data.match.home_fouls;
-                    }
-                    if (data.match.away_fouls !== undefined) {
-                        document.getElementById('away-fouls-' + matchId).textContent = data.match.away_fouls;
-                    }
-                    if (data.match.home_corners !== undefined) {
-                        document.getElementById('home-corners-' + matchId).textContent = data.match.home_corners;
-                    }
-                    if (data.match.away_corners !== undefined) {
-                        document.getElementById('away-corners-' + matchId).textContent = data.match.away_corners;
-                    }
+                    applyStats{{ $match->id }}(data.match);
 
-                    // Mettre à jour les événements si nécessaire
                     if (data.new_events && data.new_events.length > 0) {
-                        const eventsContainer = document.getElementById('match-events-' + matchId);
-
-                        // Ajouter les nouveaux événements en haut de la liste
-                        data.new_events.reverse().forEach(event => {
-                            const eventElement = document.createElement('div');
-                            eventElement.className = 'event-item new p-2 rounded-lg bg-gray-800';
-
-                            let eventIcon = '';
-                            if (event.event_type === 'goal') {
-                                eventIcon = '<span class="text-green-400">⚽ BUT!</span>';
-                            } else if (event.event_type === 'yellow_card') {
-                                eventIcon = '<span class="text-yellow-400">🟨 Carton jaune</span>';
-                            } else if (event.event_type === 'red_card') {
-                                eventIcon = '<span class="text-red-400">🟥 Carton rouge</span>';
-                            } else if (event.event_type === 'substitution_in') {
-                                eventIcon = '<span class="text-blue-400">🔄 Remplacement</span>';
-                            }
-
-                            const teamName = event.team_id == {{ $match->home_team_id }} ?
-                                '{{ $match->homeTeam->university->short_name }}' :
-                                '{{ $match->awayTeam->university->short_name }}';
-
-                            eventElement.innerHTML = `
-                                <div class="flex items-center">
-                                    <div class="mr-2">
-                                        <span class="text-gray-400 text-xs">${event.minute}'</span>
-                                    </div>
-                                    <div class="mr-2">
-                                        <div class="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center">
-                                            <i class="fas fa-user text-xs"></i>
-                                        </div>
-                                    </div>
-                                    <div class="flex-1">
-                                        <div class="flex justify-between items-center">
-                                            <div class="font-bold text-sm">
-                                                ${eventIcon}
-                                                <span class="ml-1">${event.player ? event.player.full_name : 'Joueur inconnu'}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-
-                            if (eventsContainer.firstChild) {
-                                eventsContainer.insertBefore(eventElement, eventsContainer.firstChild);
-                            } else {
-                                eventsContainer.appendChild(eventElement);
-                            }
-                        });
+                        data.new_events.reverse().forEach(event => addRealtimeEvent{{ $match->id }}(event));
                     }
                 }
             })
@@ -347,9 +390,46 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
 
-    // Rafraîchir les données toutes les 3 secondes
-    refreshMatchData{{ $match->id }}();
-    setInterval(refreshMatchData{{ $match->id }}, 3000);
+    function setupRealtime{{ $match->id }}() {
+        if (!window.Echo) {
+            refreshMatchData{{ $match->id }}();
+            setInterval(refreshMatchData{{ $match->id }}, 3000);
+            return;
+        }
+
+        const channel = window.Echo.channel('match.{{ $match->id }}');
+
+        channel
+            .listen('MatchEventOccurred', function (payload) {
+                if (payload.action === 'deleted') {
+                    removeEventById{{ $match->id }}(payload.event_id);
+                }
+
+                if (payload.new_event_data || payload.event_type) {
+                    addRealtimeEvent{{ $match->id }}(payload.new_event_data || payload);
+                }
+
+                if (payload.home_score !== undefined || payload.away_score !== undefined) {
+                    applyScores{{ $match->id }}(payload.home_score, payload.away_score);
+                }
+            })
+            .listen('MatchStatusOrStatsUpdated', function (payload) {
+                applyStats{{ $match->id }}(payload);
+
+                if (payload.home_score !== undefined || payload.away_score !== undefined) {
+                    applyScores{{ $match->id }}(payload.home_score, payload.away_score);
+                }
+            });
+
+        channel.listenToAll(function (eventName, payload) {
+            if (!payload) return;
+            if (payload.new_event_data || payload.event_type) {
+                addRealtimeEvent{{ $match->id }}(payload.new_event_data || payload);
+            }
+        });
+    }
+
+    setupRealtime{{ $match->id }}();
     @endif
     @endforeach
 });

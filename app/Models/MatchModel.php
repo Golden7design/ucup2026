@@ -101,11 +101,25 @@ class MatchModel extends Model
      */
     public function startMatchTimer()
     {
-        if (!$this->start_time) {
-            $this->start_time = Carbon::now();
+        $now = Carbon::now();
+
+        if ($this->elapsed_time === null) {
+            $this->elapsed_time = 0;
+        }
+
+        if ($this->start_time) {
+            $start = Carbon::parse($this->start_time);
+            if ($start->gt($now->copy()->addSeconds(5))) {
+                $this->start_time = $now;
+            }
             $this->timer_paused_at = null;
             $this->save();
+            return;
         }
+
+        $this->timer_paused_at = null;
+        $this->start_time = $now;
+        $this->save();
     }
 
     /**
@@ -113,10 +127,32 @@ class MatchModel extends Model
      */
     public function pauseMatchTimer()
     {
-        if ($this->start_time && !$this->timer_paused_at) {
-            $this->timer_paused_at = Carbon::now();
-            $this->save();
+        \Log::debug("=== pauseMatchTimer() appelé ===");
+        \Log::debug("start_time: " . ($this->start_time ? $this->start_time->toIso8601String() : 'null'));
+        \Log::debug("elapsed_time actuel: " . $this->elapsed_time);
+        
+        if (!$this->start_time) {
+            \Log::warning("pauseMatchTimer: pas de start_time, return");
+            return;
         }
+
+        $now = Carbon::now();
+        $base = (int) ($this->elapsed_time ?? 0);
+        
+        // Calcul du segment avec timezone UTC
+        $startParsed = Carbon::parse($this->start_time)->timezone('UTC');
+        $segment = $startParsed->diffInSeconds($now->timezone('UTC'), false);
+        
+        \Log::debug("now: " . $now->toIso8601String());
+        \Log::debug("start parsed: " . $startParsed->toIso8601String());
+        \Log::debug("segment calculé: " . $segment);
+        
+        $this->elapsed_time = (int) max(0, (int) $base + (int) $segment);
+        $this->timer_paused_at = $now;
+        $this->start_time = null;
+        $this->save();
+        
+        \Log::debug("SAUVÉ: elapsed_time = " . $this->elapsed_time);
     }
 
     /**
@@ -124,14 +160,25 @@ class MatchModel extends Model
      */
     public function resumeMatchTimer()
     {
-        if ($this->start_time && $this->timer_paused_at) {
-            $pausedDuration = Carbon::now()->diffInSeconds($this->timer_paused_at);
-            $this->start_time = Carbon::parse($this->start_time)->addSeconds($pausedDuration);
+        $now = Carbon::now();
+
+        if ($this->elapsed_time === null) {
+            $this->elapsed_time = 0;
+        }
+
+        if ($this->start_time) {
+            $start = Carbon::parse($this->start_time);
+            if ($start->gt($now->copy()->addSeconds(5))) {
+                $this->start_time = $now;
+            }
             $this->timer_paused_at = null;
             $this->save();
-        } else {
-            $this->startMatchTimer();
+            return;
         }
+
+        $this->timer_paused_at = null;
+        $this->start_time = $now;
+        $this->save();
     }
 
     /**
@@ -139,27 +186,33 @@ class MatchModel extends Model
      */
     public function getElapsedTime()
     {
-        if (!$this->start_time) {
+        $base = (int) ($this->elapsed_time ?? 0);
+
+        // Si pas de start_time, ou timer en pause, ou match pas en direct
+        if (!$this->start_time || $this->timer_paused_at || $this->status !== 'live') {
+            return max(0, $base);
+        }
+
+        $now = Carbon::now();
+        
+        // Parser le start_time en UTC
+        $start = Carbon::parse($this->start_time)->timezone('UTC');
+
+        // Auto-correction si la date de début est dans le futur (décalage timezone/serveur)
+        if ($start->gt($now->copy()->timezone('UTC')->addSeconds(5))) {
+            // Start time est dans le futur - le réinitialiser à maintenant
+            $this->start_time = $now;
+            $this->timer_paused_at = null;
+            $this->save();
+            $start = $now->timezone('UTC');
             return 0;
         }
 
-        if ($this->timer_paused_at) {
-            return Carbon::parse($this->timer_paused_at)->diffInSeconds($this->start_time);
-        }
-
-        if ($this->isFinished()) {
-            // Pour un match terminé, on retourne le temps total joué
-            if ($this->status_history) {
-                $history = json_decode($this->status_history, true);
-                if (isset($history['finished'])) {
-                    return Carbon::parse($history['finished'])->diffInSeconds($this->start_time);
-                }
-            }
-            // Sinon on retourne le temps jusqu'à maintenant (cas de fallback)
-            return Carbon::now()->diffInSeconds($this->start_time);
-        }
-
-        return Carbon::now()->diffInSeconds($this->start_time);
+        // Calcul du temps écoulé: maintenant - start
+        // $now->diffInSeconds($start) donne le temps de $start à $now
+        $running = $start->diffInSeconds($now, false);
+        
+        return (int) max(0, (int) $base + (int) $running);
     }
 
     /**
@@ -184,7 +237,14 @@ class MatchModel extends Model
     public function stopMatchTimer()
     {
         // Enregistrer le temps total joué avant d'arrêter
-        $this->total_play_time = $this->getElapsedTime();
+        if ($this->start_time) {
+            $now = Carbon::now();
+            $base = (int) ($this->elapsed_time ?? 0);
+            $segment = $now->diffInSeconds(Carbon::parse($this->start_time), false);
+            $this->elapsed_time = max(0, $base + $segment);
+        } else {
+            $this->elapsed_time = max(0, (int) ($this->elapsed_time ?? 0));
+        }
         $this->start_time = null;
         $this->timer_paused_at = null;
         $this->save();

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\MatchModel;
 use Illuminate\Http\Request;
+use App\Events\MatchStatusOrStatsUpdated;
 
 class MatchTimerController extends Controller
 {
@@ -14,9 +15,14 @@ class MatchTimerController extends Controller
     public function startTimer(Request $request, $matchId)
     {
         $match = MatchModel::findOrFail($matchId);
+        if (in_array($match->status, ['scheduled', 'finished'], true)) {
+            $match->elapsed_time = 0;
+        }
         $match->startMatchTimer();
         $match->status = 'live';
         $match->save();
+
+        event(new MatchStatusOrStatsUpdated($match, ['status' => $match->status]));
 
         return response()->json(['success' => true, 'message' => 'Timer started']);
     }
@@ -28,7 +34,10 @@ class MatchTimerController extends Controller
     {
         $match = MatchModel::findOrFail($matchId);
         $match->pauseMatchTimer();
+        $match->status = 'live';
         $match->save();
+
+        event(new MatchStatusOrStatsUpdated($match, ['status' => $match->status]));
 
         return response()->json(['success' => true, 'message' => 'Timer paused']);
     }
@@ -40,7 +49,10 @@ class MatchTimerController extends Controller
     {
         $match = MatchModel::findOrFail($matchId);
         $match->resumeMatchTimer();
+        $match->status = 'live';
         $match->save();
+
+        event(new MatchStatusOrStatsUpdated($match, ['status' => $match->status]));
 
         return response()->json(['success' => true, 'message' => 'Timer resumed']);
     }
@@ -54,6 +66,8 @@ class MatchTimerController extends Controller
         $match->stopMatchTimer();
         $match->status = 'finished';
         $match->save();
+
+        event(new MatchStatusOrStatsUpdated($match, ['status' => $match->status]));
 
         return response()->json(['success' => true, 'message' => 'Timer stopped']);
     }

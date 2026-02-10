@@ -17,6 +17,14 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withCommands([
+        // Enregistrer la commande de broadcast du timer
+        App\Console\Commands\BroadcastMatchTimer::class,
+    ])
+    ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule) {
+        // Diffuser le timer pour les matchs en direct chaque seconde
+        $schedule->command('match:broadcast-timer')->everySecond()->withoutOverlapping()->runInBackground();
+    })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 

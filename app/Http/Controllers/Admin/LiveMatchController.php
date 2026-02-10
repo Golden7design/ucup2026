@@ -146,7 +146,8 @@ class LiveMatchController extends Controller
         ]);
         
         $newStatus = $validated['status'];
-        
+        $previousStatus = $match->status;
+
         if ($newStatus === 'live' && $match->status !== 'live') {
             $allLineups = MatchLineup::where('match_id', $match->id)->get(); 
 
@@ -161,15 +162,28 @@ class LiveMatchController extends Controller
                 return redirect()->back()->with('error', 'Impossible de passer en LIVE : la formation tactique doit être enregistrée pour les deux équipes.');
             }
         }
-
-        $isStartTimeStale = $match->start_time && Carbon::parse($match->start_time)->lt(now()->subHours(2));
-
-        if ($newStatus === 'live' && (is_null($match->start_time) || $isStartTimeStale)) {
-            $match->start_time = now();
-        } 
         
-        if (in_array($newStatus, ['scheduled', 'finished'])) {
-             $match->start_time = null;
+        $now = now();
+        if ($newStatus === 'live') {
+            \Log::debug("=== updateStatus: Passage en LIVE ===");
+            if (in_array($previousStatus, ['scheduled', 'finished'], true)) {
+                $match->elapsed_time = 0;
+            }
+            if (!$match->start_time || $match->start_time->gt($now->copy()->addSeconds(5))) {
+                $match->start_time = $now;
+            }
+            $match->timer_paused_at = null;
+        } elseif ($newStatus === 'halftime') {
+            \Log::debug("=== updateStatus: Passage en HALFTIME ===");
+            \Log::debug("Avant pauseMatchTimer: elapsed_time = " . $match->elapsed_time . ", start_time = " . ($match->start_time ? $match->start_time->toIso8601String() : 'null'));
+            $match->pauseMatchTimer();
+            \Log::debug("Après pauseMatchTimer: elapsed_time = " . $match->elapsed_time);
+        } elseif ($newStatus === 'finished') {
+            $match->stopMatchTimer();
+        } elseif ($newStatus === 'scheduled') {
+            $match->elapsed_time = 0;
+            $match->start_time = null;
+            $match->timer_paused_at = null;
         }
         
         $match->status = $newStatus;
@@ -184,6 +198,7 @@ class LiveMatchController extends Controller
         event(new MatchStatusOrStatsUpdated($match, [
             'status' => $match->status,
             'start_time' => $match->start_time ? $match->start_time->timestamp * 1000 : null,
+            'elapsed_time' => $match->getElapsedTime(),
         ]));
 
         return redirect()->back()->with('success', 'Statut du match mis à jour à : ' . ucfirst($match->status) . '.');
@@ -329,6 +344,7 @@ class LiveMatchController extends Controller
                 $broadcastData = [
                     'match_id' => $match->id,
                     'event_id' => $newEvent->id,
+                    'team_id' => $newEvent->team_id,
                     'event_type' => $newEvent->event_type,
                     'minute' => $newEvent->minute,
                     'home_score' => $match->home_score, 

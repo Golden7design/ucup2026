@@ -109,7 +109,7 @@
                 <div>
                     <span class="font-bold">{{ $match->homeTeam->university->short_name }}</span>
                     {{-- Score : text-red-400 --}}
-                    <span class="mx-2 font-mono text-xl font-bold text-red-400">{{ $match->home_score }} - {{ $match->away_score }}</span>
+                    <span id="admin-live-score-{{ $match->id }}" class="mx-2 font-mono text-xl font-bold text-red-400">{{ $match->home_score }} - {{ $match->away_score }}</span>
                     <span class="font-bold">{{ $match->awayTeam->university->short_name }}</span>
                 </div>
                 {{-- Bouton Live Center : bg-red-600, hover:bg-red-500 --}}
@@ -173,4 +173,43 @@
         </button>
     </form>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        if (!window.Echo) {
+            console.warn('[Realtime] Echo non initialisé sur le dashboard admin.');
+            return;
+        }
+
+        const liveMatchIds = @json($liveMatches->pluck('id'));
+
+        function updateScoreElement(matchId, homeScore, awayScore) {
+            const scoreEl = document.getElementById(`admin-live-score-${matchId}`);
+            if (!scoreEl) return;
+
+            const current = scoreEl.textContent.split('-').map(part => part.trim());
+            const currentHome = current[0] ?? '0';
+            const currentAway = current[1] ?? '0';
+
+            const nextHome = homeScore !== undefined && homeScore !== null ? homeScore : currentHome;
+            const nextAway = awayScore !== undefined && awayScore !== null ? awayScore : currentAway;
+
+            scoreEl.textContent = `${nextHome} - ${nextAway}`;
+        }
+
+        liveMatchIds.forEach(function (matchId) {
+            window.Echo.channel(`match.${matchId}`)
+                .listen('MatchEventOccurred', function (payload) {
+                    if (payload.home_score !== undefined || payload.away_score !== undefined) {
+                        updateScoreElement(matchId, payload.home_score, payload.away_score);
+                    }
+                })
+                .listen('MatchStatusOrStatsUpdated', function (payload) {
+                    if (payload.home_score !== undefined || payload.away_score !== undefined) {
+                        updateScoreElement(matchId, payload.home_score, payload.away_score);
+                    }
+                });
+        });
+    });
+</script>
 @endsection

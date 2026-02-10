@@ -11,6 +11,7 @@
     
     <!-- GSAP Animation Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    @include('partials.realtime')
     
     <style>
         body {

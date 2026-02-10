@@ -5,6 +5,7 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Routing\Router;
+use Illuminate\Foundation\Http\Events\RequestHandled;
 
 class CsrfSessionServiceProvider extends ServiceProvider
 {
@@ -49,9 +50,9 @@ class CsrfSessionServiceProvider extends ServiceProvider
         }
 
         // Add CSRF token to all AJAX responses
-        $this->app['router']->matched(function () {
-            if (request()->ajax() || request()->wantsJson()) {
-                response()->header('X-CSRF-TOKEN', csrf_token());
+        $this->app['events']->listen(RequestHandled::class, function (RequestHandled $event) {
+            if ($event->request->ajax() || $event->request->wantsJson()) {
+                $event->response->headers->set('X-CSRF-TOKEN', csrf_token());
             }
         });
     }

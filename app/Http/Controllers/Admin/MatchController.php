@@ -108,14 +108,29 @@ class MatchController extends Controller
         // Mettre à jour le match
         $match->update($validated);
 
-        // Gérer le temps de début si le match commence
-        $newStatusIsPlaying = in_array($validated['status'], ['live', 'halftime']);
-        $isStartTimeMissing = is_null($match->start_time);
+        // Gérer le minuteur selon le statut
+        $newStatus = $validated['status'];
 
-        if ($newStatusIsPlaying && $isStartTimeMissing) {
-            $match->start_time = now();
-            $match->save();
+        $now = now();
+        if ($newStatus === 'live') {
+            if (in_array($oldStatus, ['scheduled', 'finished'], true)) {
+                $match->elapsed_time = 0;
+            }
+            if (!$match->start_time || $match->start_time->gt($now->copy()->addSeconds(5))) {
+                $match->start_time = $now;
+            }
+            $match->timer_paused_at = null;
+        } elseif ($newStatus === 'halftime') {
+            $match->pauseMatchTimer();
+        } elseif ($newStatus === 'finished') {
+            $match->stopMatchTimer();
+        } elseif ($newStatus === 'scheduled') {
+            $match->elapsed_time = 0;
+            $match->start_time = null;
+            $match->timer_paused_at = null;
         }
+
+        $match->save();
 
         // Vérifier si le score ou le statut a changé
         $scoreChanged = ($oldHomeScore != ($validated['home_score'] ?? $oldHomeScore) ||
@@ -123,7 +138,7 @@ class MatchController extends Controller
         $statusChanged = ($oldStatus != $validated['status']);
 
         // Déclencher un événement de mise à jour si nécessaire
-        if ($scoreChanged || $statusChanged || ($newStatusIsPlaying && $isStartTimeMissing)) {
+        if ($scoreChanged || $statusChanged) {
             $match->refresh();
 
             // Mettre à jour le cache pour forcer le rafraîchissement
@@ -378,7 +393,7 @@ class MatchController extends Controller
                 'match_id' => $match->id,
                 'team_id' => $teamId,
                 'player_id' => $playerId,
-                'is_starter' => (int)true,
+                'is_starter' => DB::raw('true'),
                 'position' => $starterPositions[$index] ?? 'N/A',
                 'role' => 'starter',
                 'order_key' => $order++,
@@ -392,7 +407,7 @@ class MatchController extends Controller
                 'match_id' => $match->id,
                 'team_id' => $teamId,
                 'player_id' => $playerId,
-                'is_starter' => (int)false,
+                'is_starter' => DB::raw('false'),
                 'position' => 'SUB',
                 'role' => 'substitute',
                 'order_key' => $order++,

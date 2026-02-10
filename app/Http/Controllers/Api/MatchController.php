@@ -39,14 +39,28 @@ class MatchController extends Controller
         $lastEventTime = $request->input('last_event_time', '1970-01-01 00:00:00');
         $lastUpdateTime = $request->input('last_update_time', '1970-01-01 00:00:00');
 
+        try {
+            $lastEventTimeParsed = Carbon::parse($lastEventTime);
+        } catch (\Exception $e) {
+            $lastEventTimeParsed = Carbon::parse('1970-01-01 00:00:00');
+        }
+
+        try {
+            $lastUpdateTimeParsed = Carbon::parse($lastUpdateTime);
+        } catch (\Exception $e) {
+            $lastUpdateTimeParsed = Carbon::parse('1970-01-01 00:00:00');
+        }
+
         // Vérifier si le match a été mis à jour depuis la dernière requête
-        $matchUpdated = $match->updated_at > $lastUpdateTime;
+        $matchUpdated = $match->updated_at && $match->updated_at->gt($lastUpdateTimeParsed);
 
         // Récupérer les nouveaux événements
         $newEvents = collect();
         if ($match->matchEvents->count() > 0) {
             $newEvents = $match->matchEvents
-                ->where('created_at', '>', $lastEventTime)
+                ->filter(function ($event) use ($lastEventTimeParsed) {
+                    return $event->created_at && $event->created_at->gt($lastEventTimeParsed);
+                })
                 ->sortByDesc('created_at')
                 ->take(10);
         }

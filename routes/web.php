@@ -215,6 +215,12 @@ Route::get('/test-classement', function (StandingService $standingService) {
 // Route API pour récupérer le statut et le temps d'un match
 Route::get('/api/match/{match}/status', [MatchController::class, 'getLiveStatus'])->name('api.match.status');
 
+// Route debug pour le timer (temporaire)
+Route::get('/api/matches/{match}/timer/debug', [\App\Http\Controllers\Api\MatchTimerDebugController::class, 'debug'])->name('api.match.timer.debug');
+
+// Route pour tester le broadcast du timer
+Route::get('/api/matches/{match}/timer/test-broadcast', [\App\Http\Controllers\Api\MatchTimerDebugController::class, 'testBroadcast'])->name('api.match.timer.test-broadcast');
+
 // Route de test pour vérifier si les routes API fonctionnent
 Route::get('/test-api', function () {
     return response()->json(['message' => 'API test successful', 'status' => 'working']);

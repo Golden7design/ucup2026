@@ -13,17 +13,32 @@ class MatchTimerController extends Controller
     {
         $match = MatchModel::findOrFail($matchId);
 
-        if ($match->status !== 'live') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Le match n\'est pas en cours'
-            ]);
+        // IMPORTANT: l'API ne doit pas démarrer ou modifier le chrono.
+        // Le chrono est piloté côté admin uniquement.
+
+        $label = null;
+        if ($match->timer_paused_at && $match->status === 'live') {
+            $label = 'PAUSE';
+        } elseif ($match->status === 'halftime') {
+            $label = 'MI-TEMPS';
+        } elseif ($match->status === 'finished') {
+            $label = 'FIN';
+        } elseif ($match->status === 'scheduled') {
+            $label = 'À VENIR';
         }
+
+        $elapsedSeconds = (int) $match->getElapsedTime();
+        $formatted = $match->getFormattedTime();
 
         return response()->json([
             'success' => true,
-            'elapsed_time' => $match->getElapsedTime(),
-            'formatted_time' => $match->getFormattedTime()
+            'status' => $match->status,
+            'label' => $label,
+            'is_paused' => (bool) $match->timer_paused_at,
+            'elapsed_time' => $elapsedSeconds,
+            'formatted_time' => $formatted,
+            'start_time' => $match->start_time ? $match->start_time->toIso8601String() : null,
+            'server_time' => now()->toIso8601String()
         ]);
     }
 }
