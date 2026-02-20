@@ -21,11 +21,11 @@ class PlayerController extends Controller
         $topScorers = Player::with('team.university')
             ->withCount([
                 'matchEvents as goals_count' => function ($query) {
-                    $query->where('event_type', 'goal');
+                    $query->whereIn('event_type', ['goal', 'penalty_goal']);
                 }
             ])
             ->whereHas('matchEvents', function($query) {
-                $query->where('event_type', 'goal');
+                $query->whereIn('event_type', ['goal', 'penalty_goal']);
             })
             ->orderByDesc('goals_count')
             ->take(10) 
@@ -67,7 +67,7 @@ class PlayerController extends Controller
         // Tri par statistiques ou par défaut
         if ($request->sort === 'goals') {
             $query->withCount(['matchEvents as stats_count' => function ($q) {
-                $q->where('event_type', 'goal');
+                $q->whereIn('event_type', ['goal', 'penalty_goal']);
             }])->orderByDesc('stats_count');
 
         } elseif ($request->sort === 'assists') {
@@ -95,8 +95,10 @@ class PlayerController extends Controller
 
         // Statistiques du joueur
         $stats = [
-            'goals' => $player->matchEvents()->where('event_type', 'goal')->count(),
-            'assists' => MatchEvent::where('assist_player_id', $player->id)->count(),
+            'goals' => $player->matchEvents()->whereIn('event_type', ['goal', 'penalty_goal'])->count(),
+            'assists' => MatchEvent::where('assist_player_id', $player->id)
+                ->whereIn('event_type', ['goal', 'penalty_goal'])
+                ->count(),
             'yellow_cards' => $player->matchEvents()->where('event_type', 'yellow_card')->count(),
             'red_cards' => $player->matchEvents()->where('event_type', 'red_card')->count(),
             // Compte les matchs joués où le joueur a participé à un événement (but, carton, etc.)

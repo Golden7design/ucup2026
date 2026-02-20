@@ -14,7 +14,6 @@ class HomeController extends Controller
 {
     public function index()
     {
-        $now = Carbon::now();
         $today = Carbon::today(); // Début de la journée actuelle (00:00:00)
 
         // 1. Matchs en direct (LIVE)
@@ -32,22 +31,20 @@ class HomeController extends Controller
 
         // 3. & 4. Prochains matchs (UPCOMING) et Matchs du jour (TODAY UPCOMING)
         // Nous récupérons tous les matchs à venir en premier
-        $allUpcomingMatches = MatchModel::with(['homeTeam.university', 'awayTeam.university'])
+        // Matchs du jour (statut planifié)
+        $todayUpcomingMatches = MatchModel::with(['homeTeam.university', 'awayTeam.university'])
             ->where('status', 'scheduled')
-            ->where('match_date', '>', $now) // Doit être strictement dans le futur (date et heure)
+            ->whereDate('match_date', $today)
             ->orderBy('match_date')
             ->get();
-            
-        // Filtrage pour les Matchs du Jour (ceux dont la date est aujourd'hui)
-        $todayUpcomingMatches = $allUpcomingMatches->filter(function ($match) use ($today) {
-            // Assurez-vous que match_date est un objet Carbon (sauf si votre modèle le cast déjà)
-            return Carbon::parse($match->match_date)->isSameDay($today);
-        });
 
-        // Filtrage pour les Prochains Matchs (ceux des jours suivants, limités à 5)
-        $upcomingMatches = $allUpcomingMatches->filter(function ($match) use ($today) {
-            return !Carbon::parse($match->match_date)->isSameDay($today);
-        })->take(5);
+        // Prochains matchs (jours suivants, limités à 5)
+        $upcomingMatches = MatchModel::with(['homeTeam.university', 'awayTeam.university'])
+            ->where('status', 'scheduled')
+            ->whereDate('match_date', '>', $today)
+            ->orderBy('match_date')
+            ->take(5)
+            ->get();
             
         // 5. Classement (STANDINGS)
         $standings = Standing::with('team.university') 
@@ -58,7 +55,7 @@ class HomeController extends Controller
         // 6. Top Buteurs (TOP SCORERS) - CORRECTION DU TRI
         $scorerStats = DB::table('match_events')
             ->select('player_id', DB::raw('COUNT(id) as goals'))
-            ->where('event_type', 'goal')
+            ->whereIn('event_type', ['goal', 'penalty_goal'])
             ->groupBy('player_id')
             ->orderByDesc('goals') // Tri selon le nombre de buts
             ->take(5)

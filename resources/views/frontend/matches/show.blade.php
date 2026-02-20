@@ -1238,6 +1238,13 @@
 </div>
 
 <script>
+
+        const DEBUG = false;
+        function debugLog(...args) {
+            if (DEBUG) {
+                debugLog(...args);
+            }
+        }
     // Masquer l'animation de chargement après le chargement de la page
     window.addEventListener('load', function() {
         setTimeout(function() {
@@ -1681,7 +1688,7 @@
     }
 
     // Mise à jour en temps réel (tous statuts)
-        console.log('Activation de la synchronisation en temps réel pour le match {{ $match->id }}');
+        debugLog('Activation de la synchronisation en temps réel pour le match {{ $match->id }}');
 
         function setStatusLabel(status) {
             const statusEl = document.querySelector('.match-status-sofascore');
@@ -1744,12 +1751,12 @@
             // Fonction pour tester la connectivité API
             function testApiConnectivity() {
                 const testUrl = '/api/matches/{{ $match->id }}';
-                console.log('Test de connectivité API:', testUrl);
+                debugLog('Test de connectivité API:', testUrl);
 
                 fetch(testUrl)
                     .then(response => {
                         if (response.ok) {
-                            console.log('✅ API accessible - Statut:', response.status);
+                            debugLog('✅ API accessible - Statut:', response.status);
                         } else {
                             console.error('❌ API inaccessible - Statut:', response.status);
                         }
@@ -1778,7 +1785,7 @@
                     }
 
                     const url = urlsToTry[index];
-                    console.log(`Tentative ${index + 1}/${urlsToTry.length} - URL:`, url);
+                    debugLog(`Tentative ${index + 1}/${urlsToTry.length} - URL:`, url);
 
                     fetch(url)
                         .then(response => {
@@ -1791,12 +1798,12 @@
                         })
                         .then(data => {
                             if (data) {
-                                console.log('✅ Succès avec l\'URL:', url);
-                                console.log('Réponse API complète:', data);
+                                debugLog('✅ Succès avec l\'URL:', url);
+                                debugLog('Réponse API complète:', data);
 
                                 if (data.success) {
                                     if (data.match_updated) {
-                                        console.log('Mise à jour détectée - Score:', data.match.home_score + ' - ' + data.match.away_score);
+                                        debugLog('Mise à jour détectée - Score:', data.match.home_score + ' - ' + data.match.away_score);
                                         updateMatchData(data);
                                     }
 
@@ -1810,10 +1817,10 @@
 
                                     // Ajouter les nouveaux événements même si match_updated=false
                                     if (data.new_events && data.new_events.length > 0) {
-                                        console.log('Nouveaux événements:', data.new_events.length);
+                                        debugLog('Nouveaux événements:', data.new_events.length);
                                         data.new_events.forEach(event => addEvent(event));
                                     } else if (!data.match_updated) {
-                                        console.log('Aucune mise à jour détectée');
+                                        debugLog('Aucune mise à jour détectée');
                                     }
                                 }
                             }
@@ -1872,18 +1879,18 @@
                         }
                     })
                     .listen('MatchStatusOrStatsUpdated', function (payload) {
-                        console.log('[Timer] WebSocket received:', payload);
+                        debugLog('[Timer] WebSocket received:', payload);
                         
                         // Timer tick
                         if (payload.type === 'timer_tick' && payload.elapsed_time !== undefined) {
-                            console.log('[Timer] Tick:', payload.elapsed_time);
+                            debugLog('[Timer] Tick:', payload.elapsed_time);
                             timerState.elapsedSeconds = Math.max(0, Math.floor(payload.elapsed_time));
                             renderTimer();
                             return;
                         }
 
                         if (payload.status) {
-                            console.log('[Timer] Status:', payload.status);
+                            debugLog('[Timer] Status:', payload.status);
                             setStatusLabel(payload.status);
                         }
                         
@@ -1896,7 +1903,7 @@
                             }
                         }
 
-                        console.log('[Timer] elapsed:', payload.elapsed_time, 'current:', timerState.elapsedSeconds);
+                        debugLog('[Timer] elapsed:', payload.elapsed_time, 'current:', timerState.elapsedSeconds);
                         if (payload.elapsed_time !== undefined || payload.timer_paused_at !== undefined || payload.status) {
                             applyTimerState({
                                 status: payload.status,
@@ -1906,7 +1913,7 @@
                         }
                     });
                 
-                console.log('✅ WebSocket actif');
+                debugLog('✅ WebSocket actif');
             } catch (e) {
                 console.error('[Realtime] Erreur WebSocket:', e);
                 // Fallback vers polling
@@ -1922,11 +1929,11 @@
             setupRealtime();
             
             // DEBUG: Vérifier l'état du timer
-            console.log('=== TIMER DEBUG ===');
-            console.log('Status:', timerState.status);
-            console.log('IsPaused:', timerState.isPaused);
-            console.log('ElapsedSeconds:', timerState.elapsedSeconds);
-            console.log('Formatted:', formatSeconds(timerState.elapsedSeconds));
+            debugLog('=== TIMER DEBUG ===');
+            debugLog('Status:', timerState.status);
+            debugLog('IsPaused:', timerState.isPaused);
+            debugLog('ElapsedSeconds:', timerState.elapsedSeconds);
+            debugLog('Formatted:', formatSeconds(timerState.elapsedSeconds));
         });
 </script>
 @endsection

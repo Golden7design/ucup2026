@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\MatchModel; 
 use App\Models\MatchEvent;
 use App\Models\Player; 
-use App\Models\MatchLineup; 
+use App\Models\MatchLineup;
+use App\Services\StandingService;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -17,6 +19,37 @@ use App\Events\MatchStatusOrStatsUpdated; // ✨ NOUVEL Événement pour STATS e
 
 class LiveMatchController extends Controller
 {
+    protected function swapLineupRoles(int $matchId, int $teamId, int $incomingPlayerId, int $outgoingPlayerId): void
+    {
+        $incoming = MatchLineup::firstOrNew([
+            'match_id' => $matchId,
+            'player_id' => $incomingPlayerId,
+        ]);
+        $incoming->team_id = $teamId;
+        if (Schema::hasColumn('match_lineups', 'role')) {
+            $incoming->role = 'starter';
+        }
+        $incoming->save();
+
+        $outgoing = MatchLineup::firstOrNew([
+            'match_id' => $matchId,
+            'player_id' => $outgoingPlayerId,
+        ]);
+        $outgoing->team_id = $teamId;
+        if (Schema::hasColumn('match_lineups', 'role')) {
+            $outgoing->role = 'substitute';
+        }
+        $outgoing->save();
+
+        if (Schema::hasColumn('match_lineups', 'is_starter')) {
+            MatchLineup::where('match_id', $matchId)
+                ->where('player_id', $incomingPlayerId)
+                ->update(['is_starter' => DB::raw('true')]);
+            MatchLineup::where('match_id', $matchId)
+                ->where('player_id', $outgoingPlayerId)
+                ->update(['is_starter' => DB::raw('false')]);
+        }
+    }
     /**
      * Affiche la liste des matchs pour le Live Center, triés par statut et date.
      */
@@ -51,6 +84,107 @@ class LiveMatchController extends Controller
         return response()->json($players);
     }
 
+    /**
+     * Charge les titulaires et remplaçants actuels d'une équipe pour le match.
+     * Utilisé pour garder les sélecteurs de remplacement à jour pendant le live.
+     */
+    public function getLineupSelectData(MatchModel $match, int $teamId)
+    {
+        $allLineups = MatchLineup::where('match_id', $match->id)
+            ->where('team_id', $teamId)
+            ->with('player')
+            ->get();
+
+        if (Schema::hasColumn('match_lineups', 'role')) {
+            $starters = $allLineups->where('role', 'starter');
+            $bench = $allLineups->where('role', 'substitute');
+        } else {
+            $starters = $allLineups->where('is_starter', true);
+            $bench = $allLineups->where('is_starter', false);
+        }
+
+        if ($starters->isEmpty() || $bench->isEmpty()) {
+            $fallbackPlayers = Player::where('team_id', $teamId)
+                ->orderBy('jersey_number')
+                ->get();
+
+            $fallbackData = $fallbackPlayers->mapWithKeys(function ($player) use ($teamId) {
+                return [
+                    $player->id => [
+                        'id' => $player->id,
+                        'name' => $player->full_name ?? ($player->first_name . ' ' . $player->last_name),
+                        'jersey' => $player->jersey_number,
+                        'team_id' => $teamId,
+                        'position' => $player->position,
+                    ],
+                ];
+            })->all();
+
+            return response()->json([
+                'starters' => $fallbackData,
+                'bench' => $fallbackData,
+            ]);
+        }
+
+        $mapPlayers = function ($lineups) use ($teamId) {
+            return $lineups->sortBy(fn($item) => $item->player->jersey_number)
+                ->mapWithKeys(function ($lineup) use ($teamId) {
+                    $player = $lineup->player;
+                    return [
+                        $player->id => [
+                            'id' => $player->id,
+                            'name' => $player->full_name ?? ($player->first_name . ' ' . $player->last_name),
+                            'jersey' => $player->jersey_number,
+                            'team_id' => $teamId,
+                            'position' => $player->position,
+                        ],
+                    ];
+                })->all();
+        };
+
+        return response()->json([
+            'starters' => $mapPlayers($starters),
+            'bench' => $mapPlayers($bench),
+        ]);
+    }
+
+    /**
+     * Retourne la liste des événements pour rafraîchissement dynamique côté admin.
+     */
+    public function getEventsList(MatchModel $match)
+    {
+        $match->load(['homeTeam.university', 'awayTeam.university']);
+
+        $events = $match->matchEvents()
+            ->with(['player', 'assistPlayer', 'outPlayer', 'team.university'])
+            ->where('event_type', '!=', 'substitution_out')
+            ->orderBy('minute', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $homeShortName = $match->homeTeam->university->short_name ?? $match->homeTeam->name;
+        $awayShortName = $match->awayTeam->university->short_name ?? $match->awayTeam->name;
+
+        return response()->json([
+            'success' => true,
+            'events' => $events->map(function ($event) use ($match, $homeShortName, $awayShortName) {
+                $isHomeTeam = $event->team_id == $match->home_team_id;
+
+                return [
+                    'id' => $event->id,
+                    'minute' => $event->minute,
+                    'event_type' => $event->event_type,
+                    'team_id' => $event->team_id,
+                    'team_short_name' => $isHomeTeam ? $homeShortName : $awayShortName,
+                    'is_home_team' => $isHomeTeam,
+                    'player_name' => $event->player->full_name ?? 'Joueur inconnu',
+                    'assist_name' => $event->assistPlayer->full_name ?? null,
+                    'out_player_name' => $event->outPlayer->full_name ?? null,
+                ];
+            }),
+        ]);
+    }
+
     //----------------------------------------------------------------------
 
     /**
@@ -72,11 +206,19 @@ class LiveMatchController extends Controller
 
         $allLineups = MatchLineup::where('match_id', $match->id)->with('player')->get(); 
 
-        $homeStarters = $allLineups->where('team_id', $match->home_team_id)->where('role', 'starter')->sortBy(fn($item) => $item->player->jersey_number);
-        $homeBench = $allLineups->where('team_id', $match->home_team_id)->where('role', 'substitute')->sortBy(fn($item) => $item->player->jersey_number);
-        
-        $awayStarters = $allLineups->where('team_id', $match->away_team_id)->where('role', 'starter')->sortBy(fn($item) => $item->player->jersey_number);
-        $awayBench = $allLineups->where('team_id', $match->away_team_id)->where('role', 'substitute')->sortBy(fn($item) => $item->player->jersey_number);
+        if (Schema::hasColumn('match_lineups', 'role')) {
+            $homeStarters = $allLineups->where('team_id', $match->home_team_id)->where('role', 'starter')->sortBy(fn($item) => $item->player->jersey_number);
+            $homeBench = $allLineups->where('team_id', $match->home_team_id)->where('role', 'substitute')->sortBy(fn($item) => $item->player->jersey_number);
+            
+            $awayStarters = $allLineups->where('team_id', $match->away_team_id)->where('role', 'starter')->sortBy(fn($item) => $item->player->jersey_number);
+            $awayBench = $allLineups->where('team_id', $match->away_team_id)->where('role', 'substitute')->sortBy(fn($item) => $item->player->jersey_number);
+        } else {
+            $homeStarters = $allLineups->where('team_id', $match->home_team_id)->where('is_starter', true)->sortBy(fn($item) => $item->player->jersey_number);
+            $homeBench = $allLineups->where('team_id', $match->home_team_id)->where('is_starter', false)->sortBy(fn($item) => $item->player->jersey_number);
+            
+            $awayStarters = $allLineups->where('team_id', $match->away_team_id)->where('is_starter', true)->sortBy(fn($item) => $item->player->jersey_number);
+            $awayBench = $allLineups->where('team_id', $match->away_team_id)->where('is_starter', false)->sortBy(fn($item) => $item->player->jersey_number);
+        }
 
         $currentLineups = $allLineups->keyBy('player_id');
         $currentHomeLineup = $currentLineups->where('team_id', $match->home_team_id);
@@ -106,8 +248,66 @@ class LiveMatchController extends Controller
             ];
         })->all();
 
+        $homeStartersForSelect = $homeStarters->isNotEmpty() ? $homeStarters : $allHomePlayers;
+        $homeBenchForSelect = $homeBench->isNotEmpty() ? $homeBench : $allHomePlayers;
+        $awayStartersForSelect = $awayStarters->isNotEmpty() ? $awayStarters : $allAwayPlayers;
+        $awayBenchForSelect = $awayBench->isNotEmpty() ? $awayBench : $allAwayPlayers;
+
+        $homeStartersData = $homeStartersForSelect->mapWithKeys(function ($lineup) use ($match) {
+            $player = $lineup->player ?? $lineup;
+            return [
+                $player->id => [
+                    'id' => $player->id,
+                    'name' => $player->full_name ?? ($player->first_name . ' ' . $player->last_name),
+                    'jersey' => $player->jersey_number,
+                    'team_id' => $match->home_team_id,
+                    'position' => $player->position,
+                ]
+            ];
+        })->all();
+
+        $homeBenchData = $homeBenchForSelect->mapWithKeys(function ($lineup) use ($match) {
+            $player = $lineup->player ?? $lineup;
+            return [
+                $player->id => [
+                    'id' => $player->id,
+                    'name' => $player->full_name ?? ($player->first_name . ' ' . $player->last_name),
+                    'jersey' => $player->jersey_number,
+                    'team_id' => $match->home_team_id,
+                    'position' => $player->position,
+                ]
+            ];
+        })->all();
+
+        $awayStartersData = $awayStartersForSelect->mapWithKeys(function ($lineup) use ($match) {
+            $player = $lineup->player ?? $lineup;
+            return [
+                $player->id => [
+                    'id' => $player->id,
+                    'name' => $player->full_name ?? ($player->first_name . ' ' . $player->last_name),
+                    'jersey' => $player->jersey_number,
+                    'team_id' => $match->away_team_id,
+                    'position' => $player->position,
+                ]
+            ];
+        })->all();
+
+        $awayBenchData = $awayBenchForSelect->mapWithKeys(function ($lineup) use ($match) {
+            $player = $lineup->player ?? $lineup;
+            return [
+                $player->id => [
+                    'id' => $player->id,
+                    'name' => $player->full_name ?? ($player->first_name . ' ' . $player->last_name),
+                    'jersey' => $player->jersey_number,
+                    'team_id' => $match->away_team_id,
+                    'position' => $player->position,
+                ]
+            ];
+        })->all();
+
         $events = $match->matchEvents()
                      ->with(['player', 'assistPlayer', 'outPlayer', 'team.university'])
+                     ->where('event_type', '!=', 'substitution_out')
                      ->orderBy('minute', 'desc')
                      ->get();
                      
@@ -123,6 +323,10 @@ class LiveMatchController extends Controller
             'currentAwayLineup' => $currentAwayLineup, 
             'homePlayersData' => $homePlayersData, // Données pour JS
             'awayPlayersData' => $awayPlayersData, // Données pour JS
+            'homeStartersData' => $homeStartersData,
+            'homeBenchData' => $homeBenchData,
+            'awayStartersData' => $awayStartersData,
+            'awayBenchData' => $awayBenchData,
             'events' => $events,
             'homeStarters' => $homeStarters,
             'homeBench' => $homeBench,
@@ -139,7 +343,7 @@ class LiveMatchController extends Controller
     /**
      * Met à jour le statut du match.
      */
-    public function updateStatus(Request $request, MatchModel $match)
+    public function updateStatus(Request $request, MatchModel $match, StandingService $standingService)
     {
         $validated = $request->validate([
             'status' => 'required|in:scheduled,live,halftime,finished',
@@ -165,7 +369,6 @@ class LiveMatchController extends Controller
         
         $now = now();
         if ($newStatus === 'live') {
-            \Log::debug("=== updateStatus: Passage en LIVE ===");
             if (in_array($previousStatus, ['scheduled', 'finished'], true)) {
                 $match->elapsed_time = 0;
             }
@@ -174,10 +377,7 @@ class LiveMatchController extends Controller
             }
             $match->timer_paused_at = null;
         } elseif ($newStatus === 'halftime') {
-            \Log::debug("=== updateStatus: Passage en HALFTIME ===");
-            \Log::debug("Avant pauseMatchTimer: elapsed_time = " . $match->elapsed_time . ", start_time = " . ($match->start_time ? $match->start_time->toIso8601String() : 'null'));
             $match->pauseMatchTimer();
-            \Log::debug("Après pauseMatchTimer: elapsed_time = " . $match->elapsed_time);
         } elseif ($newStatus === 'finished') {
             $match->stopMatchTimer();
         } elseif ($newStatus === 'scheduled') {
@@ -188,8 +388,8 @@ class LiveMatchController extends Controller
         
         $match->status = $newStatus;
         
-        if ($match->status === 'finished') {
-            // (TODO: Recalculer le classement ici)
+        if ($match->status === 'finished' && $previousStatus !== 'finished') {
+            $standingService->updateStandingsForMatch($match);
         }
         
         $match->save();
@@ -274,7 +474,7 @@ class LiveMatchController extends Controller
         ]);
         
         $validated = $request->validate([
-            'event_type' => 'required|string|in:goal,penalty_goal,own_goal,yellow_card,red_card,substitution_in',
+            'event_type' => 'required|string|in:goal,penalty_goal,own_goal,yellow_card,second_yellow,red_card,substitution_in,injury,penalty_missed,big_chance_missed',
             'team_id' => 'required|exists:teams,id',
             'player_id' => 'required|exists:players,id',
             'assist_player_id' => 'nullable|exists:players,id',
@@ -284,6 +484,9 @@ class LiveMatchController extends Controller
         
         if ($validated['event_type'] === 'substitution_in' && is_null($validated['out_player_id'])) {
             return redirect()->back()->withErrors(['out_player_id' => 'Le joueur sortant est obligatoire pour un remplacement.'])->withInput();
+        }
+        if ($validated['event_type'] === 'substitution_in' && $validated['out_player_id'] == $validated['player_id']) {
+            return redirect()->back()->withErrors(['out_player_id' => 'Le joueur sortant ne peut pas être le même que le joueur entrant.'])->withInput();
         }
         
         try {
@@ -314,6 +517,14 @@ class LiveMatchController extends Controller
                         'event_type' => 'substitution_out',
                         'minute' => $validated['minute'],
                     ]);
+
+                    // 2.b Mettre à jour la composition d'équipe (Lineup)
+                    $this->swapLineupRoles(
+                        $match->id,
+                        $validated['team_id'],
+                        $validated['player_id'],
+                        $validated['out_player_id']
+                    );
                 }
 
                 // 3. Mettre à jour le score
@@ -418,6 +629,14 @@ class LiveMatchController extends Controller
                     if ($outEvent) {
                         $outEvent->delete();
                     }
+
+                    // Revenir à la composition d'origine (entrant redevient remplaçant, sortant redevient titulaire)
+                    $this->swapLineupRoles(
+                        $matchEvent->match_id,
+                        $matchEvent->team_id,
+                        $matchEvent->out_player_id,
+                        $matchEvent->player_id
+                    );
                 }
 
                 $matchEvent->delete();

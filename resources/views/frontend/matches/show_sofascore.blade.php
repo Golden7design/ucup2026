@@ -1139,6 +1139,13 @@
 </div>
 
 <script>
+
+        const DEBUG = false;
+        function debugLog(...args) {
+            if (DEBUG) {
+                debugLog(...args);
+            }
+        }
     // Masquer l'animation de chargement après le chargement de la page
     window.addEventListener('load', function() {
         setTimeout(function() {
@@ -1525,7 +1532,7 @@
     }
     
     // Mise à jour en temps réel (tous statuts)
-        console.log('Activation de la synchronisation en temps réel pour le match {{ $match->id }}');
+        debugLog('Activation de la synchronisation en temps réel pour le match {{ $match->id }}');
 
         function updateElapsedTime() {
             fetch(`/api/matches/{{ $match->id }}/timer`)
@@ -1607,12 +1614,12 @@
         function startPolling() {
             function testApiConnectivity() {
                 const testUrl = '/api/matches/{{ $match->id }}';
-                console.log('Test de connectivité API:', testUrl);
+                debugLog('Test de connectivité API:', testUrl);
 
                 fetch(testUrl)
                     .then(response => {
                         if (response.ok) {
-                            console.log('✅ API accessible - Statut:', response.status);
+                            debugLog('✅ API accessible - Statut:', response.status);
                         } else {
                             console.error('❌ API inaccessible - Statut:', response.status);
                         }
@@ -1638,7 +1645,7 @@
                     }
 
                     const url = urlsToTry[index];
-                    console.log(`Tentative ${index + 1}/${urlsToTry.length} - URL:`, url);
+                    debugLog(`Tentative ${index + 1}/${urlsToTry.length} - URL:`, url);
 
                     fetch(url)
                         .then(response => {
@@ -1651,12 +1658,12 @@
                         })
                         .then(data => {
                             if (data) {
-                                console.log('✅ Succès avec l'URL:', url);
-                                console.log('Réponse API complète:', data);
+                                debugLog('✅ Succès avec l'URL:', url);
+                                debugLog('Réponse API complète:', data);
 
                                 if (data.success) {
                                     if (data.match_updated) {
-                                        console.log('Mise à jour détectée - Score:', data.match.home_score + ' - ' + data.match.away_score);
+                                        debugLog('Mise à jour détectée - Score:', data.match.home_score + ' - ' + data.match.away_score);
                                         updateMatchData(data);
                                     }
 
@@ -1668,10 +1675,10 @@
                                     }
 
                                     if (data.new_events && data.new_events.length > 0) {
-                                        console.log('Nouveaux événements:', data.new_events.length);
+                                        debugLog('Nouveaux événements:', data.new_events.length);
                                         data.new_events.forEach(event => addEvent(event));
                                     } else if (!data.match_updated) {
-                                        console.log('Aucune mise à jour détectée');
+                                        debugLog('Aucune mise à jour détectée');
                                     }
                                 }
                             }

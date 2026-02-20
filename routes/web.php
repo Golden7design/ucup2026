@@ -136,10 +136,19 @@ Route::prefix('admin')->name('admin.')->middleware(['auth'])->group(function () 
 
         // Annulation/Suppression d'événement (URI: /admin/live/event/{matchEvent})
         Route::delete('/event/{matchEvent}', [LiveMatchController::class, 'deleteEvent'])->name('delete_event'); 
+
+        // Liste des événements (refresh dynamique côté admin)
+        // URI: /admin/live/match/{match}/events
+        Route::get('/match/{match}/events', [LiveMatchController::class, 'getEventsList'])->name('events.list');
         
         // Mise à jour de la Composition d'équipe Live (différente du CRUD standard)
         // URI: /admin/live/lineup/{match}/{team}
         Route::post('/lineup/{match}/{team}', [LiveMatchController::class, 'updateLineup'])->name('lineup.update');
+
+        // Données dynamiques pour les sélecteurs de remplacement (titulaires/remplaçants)
+        // URI: /admin/live/match/{match}/lineup-select/{team}
+        Route::get('/match/{match}/lineup-select/{team}', [LiveMatchController::class, 'getLineupSelectData'])
+            ->name('lineup.select');
     });
 
     // Statistiques
@@ -198,33 +207,28 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::resource('gallery', GalleryController::class)->except(['show', 'edit', 'update']);
 });
 
-/*
-|--------------------------------------------------------------------------
-| ROUTE DE TEST TEMPORAIRE (POUR RECALCULER TOUS LES CLASSEMENTS)
-|--------------------------------------------------------------------------
-*/
-// Cette route est conservée ici pour le test manuel via GET si nécessaire.
-Route::get('/test-classement', function (StandingService $standingService) {
-    
-    // --- ÉTAPE CRUCIALE : RECALCULER TOUS LES CLASSEMENTS ---
-    $standingService->recalculateAllStandings();
-
-    return "TOUT le classement a été mis à jour avec succès à partir de tous les matchs terminés. Vérifiez la page /standings.";
-});
-
 // Route API pour récupérer le statut et le temps d'un match
 Route::get('/api/match/{match}/status', [MatchController::class, 'getLiveStatus'])->name('api.match.status');
 
-// Route debug pour le timer (temporaire)
-Route::get('/api/matches/{match}/timer/debug', [\App\Http\Controllers\Api\MatchTimerDebugController::class, 'debug'])->name('api.match.timer.debug');
+/*
+|--------------------------------------------------------------------------
+| ROUTES DE TEST / DEBUG (local uniquement)
+|--------------------------------------------------------------------------
+*/
+if (app()->environment('local')) {
+    Route::get('/test-classement', function (StandingService $standingService) {
+        $standingService->recalculateAllStandings();
 
-// Route pour tester le broadcast du timer
-Route::get('/api/matches/{match}/timer/test-broadcast', [\App\Http\Controllers\Api\MatchTimerDebugController::class, 'testBroadcast'])->name('api.match.timer.test-broadcast');
+        return "TOUT le classement a été mis à jour avec succès à partir de tous les matchs terminés. Vérifiez la page /standings.";
+    });
 
-// Route de test pour vérifier si les routes API fonctionnent
-Route::get('/test-api', function () {
-    return response()->json(['message' => 'API test successful', 'status' => 'working']);
-});
+    Route::get('/api/matches/{match}/timer/debug', [\App\Http\Controllers\Api\MatchTimerDebugController::class, 'debug'])->name('api.match.timer.debug');
+    Route::get('/api/matches/{match}/timer/test-broadcast', [\App\Http\Controllers\Api\MatchTimerDebugController::class, 'testBroadcast'])->name('api.match.timer.test-broadcast');
+
+    Route::get('/test-api', function () {
+        return response()->json(['message' => 'API test successful', 'status' => 'working']);
+    });
+}
 
 // Routes pour la gestion du thème
 Route::prefix('theme')->name('theme.')->group(function () {

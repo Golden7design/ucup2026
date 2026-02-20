@@ -414,6 +414,12 @@
                                             $textColor = 'text-yellow-300';
                                             $eventLabel = 'Carton Jaune';
                                             break;
+                                        case 'second_yellow':
+                                            $bgColor = 'bg-yellow-900/50 border-yellow-500/30';
+                                            $icon = '🟨🟨';
+                                            $textColor = 'text-yellow-300';
+                                            $eventLabel = 'Second Jaune';
+                                            break;
                                         case 'red_card':
                                             $bgColor = 'bg-red-900/50 border-red-500/30';
                                             $icon = '🟥';
@@ -425,6 +431,24 @@
                                             $icon = '🔄';
                                             $textColor = 'text-blue-300';
                                             $eventLabel = 'Remplacement';
+                                            break;
+                                        case 'injury':
+                                            $bgColor = 'bg-purple-900/50 border-purple-500/30';
+                                            $icon = '⚕️';
+                                            $textColor = 'text-purple-300';
+                                            $eventLabel = 'Blessure';
+                                            break;
+                                        case 'penalty_missed':
+                                            $bgColor = 'bg-orange-900/50 border-orange-500/30';
+                                            $icon = '❌';
+                                            $textColor = 'text-orange-300';
+                                            $eventLabel = 'Penalty manqué';
+                                            break;
+                                        case 'big_chance_missed':
+                                            $bgColor = 'bg-orange-900/50 border-orange-500/30';
+                                            $icon = '😱';
+                                            $textColor = 'text-orange-300';
+                                            $eventLabel = 'Occasion manquée';
                                             break;
                                     }
 
@@ -439,7 +463,7 @@
                                             <span class="font-medium {{ $textColor }}">{{ $eventLabel }}</span>
                                             <span class="ml-1">{{ $event->player->full_name ?? 'Joueur inconnu' }}</span>
 
-                                            @if($event->event_type == 'goal' && $event->assistPlayer)
+                                            @if(in_array($event->event_type, ['goal', 'penalty_goal'], true) && $event->assistPlayer)
                                                 <div class="text-xs text-gray-300 mt-1">
                                                     Assisté par {{ $event->assistPlayer->full_name ?? 'Joueur inconnu' }}
                                                 </div>
@@ -649,6 +673,10 @@
     // Données des joueurs pour le formulaire
     const HOME_PLAYERS = @json($homePlayersData);
     const AWAY_PLAYERS = @json($awayPlayersData);
+    const HOME_STARTERS = @json($homeStartersData);
+    const HOME_BENCH = @json($homeBenchData);
+    const AWAY_STARTERS = @json($awayStartersData);
+    const AWAY_BENCH = @json($awayBenchData);
 
     function populatePlayerSelect(selectElement, players, defaultText, selectedPlayerId = null) {
         let options = `<option value="">${defaultText}</option>`;
@@ -680,6 +708,8 @@
             const teamId = teamSelect.value;
             const isHomeTeam = (teamId == homeTeamId);
             const players = teamId ? (isHomeTeam ? HOME_PLAYERS : AWAY_PLAYERS) : {};
+            const starters = teamId ? (isHomeTeam ? HOME_STARTERS : AWAY_STARTERS) : {};
+            const bench = teamId ? (isHomeTeam ? HOME_BENCH : AWAY_BENCH) : {};
 
             assistContainer.style.display = (eventType === 'goal' || eventType === 'penalty_goal') ? 'block' : 'none';
             outPlayerContainer.style.display = (eventType === 'substitution_in') ? 'block' : 'none';
@@ -692,7 +722,8 @@
 
                 if (eventType === 'substitution_in') {
                     playerHelpText.textContent = "Sélectionnez le joueur qui ENTRE";
-                    populatePlayerSelect(outPlayerSelect, players, '-- Sélectionner le joueur sortant --');
+                    populatePlayerSelect(playerMainSelect, bench, '-- Sélectionner le joueur entrant --');
+                    populatePlayerSelect(outPlayerSelect, starters, '-- Sélectionner le joueur sortant --');
                     populatePlayerSelect(assistSelect, {}, '-- Pas d\'assistance --');
                 }
                 else if (eventType === 'goal' || eventType === 'penalty_goal') {

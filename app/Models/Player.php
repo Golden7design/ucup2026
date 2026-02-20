@@ -106,14 +106,18 @@ class Player extends Model
     
     public function getGoalsCount(): int
     {
-        return $this->matchEvents()->where('event_type', 'goal')->count();
+        return $this->matchEvents()
+            ->whereIn('event_type', ['goal', 'penalty_goal'])
+            ->count();
     }
 
     public function getAssistsCount(): int
     {
         // Utilise la relation 'assists' qui est bien définie pour les événements où il est passeur
         // On filtre uniquement les événements de type 'goal' car une passe décisive mène forcément à un but.
-        return $this->assists()->where('event_type', 'goal')->count(); 
+        return $this->assists()
+            ->whereIn('event_type', ['goal', 'penalty_goal'])
+            ->count(); 
     }
 
     public function getYellowCardsCount(): int

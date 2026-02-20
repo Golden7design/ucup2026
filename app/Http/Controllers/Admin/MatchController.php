@@ -183,7 +183,7 @@ class MatchController extends Controller
             'home_red_cards' => 'sometimes|integer|min:0',
             'away_yellow_cards' => 'sometimes|integer|min:0',
             'away_red_cards' => 'sometimes|integer|min:0',
-            'event_type' => 'sometimes|string|in:goal,yellow_card,red_card,substitution,foul,corner',
+            'event_type' => 'sometimes|string|in:goal,penalty_goal,own_goal,yellow_card,second_yellow,red_card,substitution,foul,corner,injury,penalty_missed,big_chance_missed',
             'player_id' => 'sometimes|exists:players,id',
             'minute' => 'sometimes|integer|min:1',
             'team_id' => 'sometimes|in:'.$match->home_team_id.','.$match->away_team_id,

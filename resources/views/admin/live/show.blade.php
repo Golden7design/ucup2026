@@ -392,7 +392,7 @@
                     <h3 class="text-lg font-semibold text-blue-300">Historique des Événements</h3>
                 </div>
                 <div class="p-5">
-                    <div class="max-h-[500px] overflow-y-auto space-y-3">
+                    <div id="event-history-list" class="max-h-[500px] overflow-y-auto space-y-3">
                         @if($events->isEmpty())
                             <p class="text-gray-400 text-center py-6">Aucun événement enregistré pour le moment.</p>
                         @else
@@ -423,6 +423,12 @@
                                             $textColor = 'text-yellow-300';
                                             $eventLabel = 'Carton Jaune';
                                             break;
+                                        case 'second_yellow':
+                                            $bgColor = 'bg-yellow-900/50 border-yellow-500/30';
+                                            $icon = '🟨🟨';
+                                            $textColor = 'text-yellow-300';
+                                            $eventLabel = 'Second Jaune';
+                                            break;
                                         case 'red_card':
                                             $bgColor = 'bg-red-900/50 border-red-500/30';
                                             $icon = '🟥';
@@ -434,6 +440,24 @@
                                             $icon = '🔄';
                                             $textColor = 'text-blue-300';
                                             $eventLabel = 'Remplacement';
+                                            break;
+                                        case 'injury':
+                                            $bgColor = 'bg-purple-900/50 border-purple-500/30';
+                                            $icon = '⚕️';
+                                            $textColor = 'text-purple-300';
+                                            $eventLabel = 'Blessure';
+                                            break;
+                                        case 'penalty_missed':
+                                            $bgColor = 'bg-orange-900/50 border-orange-500/30';
+                                            $icon = '❌';
+                                            $textColor = 'text-orange-300';
+                                            $eventLabel = 'Penalty manqué';
+                                            break;
+                                        case 'big_chance_missed':
+                                            $bgColor = 'bg-orange-900/50 border-orange-500/30';
+                                            $icon = '😱';
+                                            $textColor = 'text-orange-300';
+                                            $eventLabel = 'Occasion manquée';
                                             break;
                                     }
 
@@ -448,7 +472,7 @@
                                             <span class="font-medium {{ $textColor }}">{{ $eventLabel }}</span>
                                             <span class="ml-1">{{ $event->player->full_name ?? 'Joueur inconnu' }}</span>
 
-                                            @if($event->event_type == 'goal' && $event->assistPlayer)
+                                            @if(in_array($event->event_type, ['goal', 'penalty_goal'], true) && $event->assistPlayer)
                                                 <div class="text-xs text-gray-300 mt-1">
                                                     Assisté par {{ $event->assistPlayer->full_name ?? 'Joueur inconnu' }}
                                                 </div>
@@ -658,6 +682,13 @@
     // Données des joueurs pour le formulaire
     const HOME_PLAYERS = @json($homePlayersData);
     const AWAY_PLAYERS = @json($awayPlayersData);
+    let HOME_STARTERS = @json($homeStartersData);
+    let HOME_BENCH = @json($homeBenchData);
+    let AWAY_STARTERS = @json($awayStartersData);
+    let AWAY_BENCH = @json($awayBenchData);
+    const LINEUP_SELECT_URL_TEMPLATE = "{{ route('admin.live.lineup.select', ['match' => $match->id, 'team' => 'TEAM_ID']) }}";
+    const EVENTS_LIST_URL = "{{ route('admin.live.events.list', $match) }}";
+    const EVENT_DELETE_URL_TEMPLATE = "{{ route('admin.live.delete_event', ['matchEvent' => 'EVENT_ID']) }}";
 
     function populatePlayerSelect(selectElement, players, defaultText, selectedPlayerId = null) {
         let options = `<option value="">${defaultText}</option>`;
@@ -726,11 +757,45 @@
         const homeTeamId = '{{ $match->home_team_id }}';
         const awayTeamId = '{{ $match->away_team_id }}';
 
-        function updateFormFields() {
+        let lastLineupFetchToken = 0;
+
+        async function refreshLineupSelectData(teamId) {
+            const fetchToken = ++lastLineupFetchToken;
+            const url = LINEUP_SELECT_URL_TEMPLATE.replace('TEAM_ID', encodeURIComponent(teamId));
+
+            try {
+                const response = await fetch(url, {
+                    headers: { 'Accept': 'application/json' },
+                });
+
+                if (!response.ok) {
+                    throw new Error('Erreur lors du chargement des compositions.');
+                }
+
+                const data = await response.json();
+                if (fetchToken !== lastLineupFetchToken) {
+                    return;
+                }
+
+                if (teamId == homeTeamId) {
+                    HOME_STARTERS = data.starters || HOME_STARTERS;
+                    HOME_BENCH = data.bench || HOME_BENCH;
+                } else if (teamId == awayTeamId) {
+                    AWAY_STARTERS = data.starters || AWAY_STARTERS;
+                    AWAY_BENCH = data.bench || AWAY_BENCH;
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        async function updateFormFields() {
             const eventType = eventTypeSelect.value;
             const teamId = teamSelect.value;
             const isHomeTeam = (teamId == homeTeamId);
             const players = teamId ? (isHomeTeam ? HOME_PLAYERS : AWAY_PLAYERS) : {};
+            let starters = teamId ? (isHomeTeam ? HOME_STARTERS : AWAY_STARTERS) : {};
+            let bench = teamId ? (isHomeTeam ? HOME_BENCH : AWAY_BENCH) : {};
 
             assistContainer.style.display = (eventType === 'goal' || eventType === 'penalty_goal') ? 'block' : 'none';
             outPlayerContainer.style.display = (eventType === 'substitution_in') ? 'block' : 'none';
@@ -739,26 +804,38 @@
             const mainPlayerDefaultText = teamId ? '-- Sélectionner le joueur --' : '-- Sélectionner d\'abord l\'équipe --';
 
             if (teamId) {
-                populatePlayerSelect(playerMainSelect, players, mainPlayerDefaultText);
-
                 if (eventType === 'substitution_in') {
+                    await refreshLineupSelectData(teamId);
+                    starters = isHomeTeam ? HOME_STARTERS : AWAY_STARTERS;
+                    bench = isHomeTeam ? HOME_BENCH : AWAY_BENCH;
+
                     playerHelpText.textContent = "Sélectionnez le joueur qui ENTRE";
-                    populatePlayerSelect(outPlayerSelect, players, '-- Sélectionner le joueur sortant --');
+                    populatePlayerSelect(playerMainSelect, bench, '-- Sélectionner le joueur entrant --');
+                    populatePlayerSelect(outPlayerSelect, starters, '-- Sélectionner le joueur sortant --');
                     populatePlayerSelect(assistSelect, {}, '-- Pas d\'assistance --');
-                }
-                else if (eventType === 'goal' || eventType === 'penalty_goal') {
-                    playerHelpText.textContent = "Sélectionnez le buteur";
-                    populatePlayerSelect(assistSelect, players, '-- Pas d\'assistance --');
-                    populatePlayerSelect(outPlayerSelect, {}, '-- Sélectionner --');
-                }
-                else {
-                    if (eventType === 'own_goal') {
-                        playerHelpText.textContent = "Sélectionnez le joueur qui a marqué contre son camp";
-                    } else if (eventType === 'yellow_card' || eventType === 'red_card') {
-                        playerHelpText.textContent = "Sélectionnez le joueur cartonné";
+                } else {
+                    await refreshLineupSelectData(teamId);
+                    starters = isHomeTeam ? HOME_STARTERS : AWAY_STARTERS;
+                    const hasStarters = starters && Object.keys(starters).length > 0;
+                    const onFieldPlayers = hasStarters ? starters : players;
+
+                    populatePlayerSelect(playerMainSelect, onFieldPlayers, mainPlayerDefaultText);
+
+                    if (eventType === 'goal' || eventType === 'penalty_goal') {
+                        playerHelpText.textContent = "Sélectionnez le buteur";
+                        populatePlayerSelect(assistSelect, onFieldPlayers, '-- Pas d\'assistance --');
+                        populatePlayerSelect(outPlayerSelect, {}, '-- Sélectionner --');
+                    } else {
+                        if (eventType === 'own_goal') {
+                            playerHelpText.textContent = "Sélectionnez le joueur qui a marqué contre son camp";
+                        } else if (eventType === 'yellow_card' || eventType === 'red_card' || eventType === 'second_yellow') {
+                            playerHelpText.textContent = "Sélectionnez le joueur cartonné";
+                        } else if (eventType === 'injury') {
+                            playerHelpText.textContent = "Sélectionnez le joueur blessé";
+                        }
+                        populatePlayerSelect(outPlayerSelect, {}, '-- Sélectionner --');
+                        populatePlayerSelect(assistSelect, {}, '-- Pas d\'assistance --');
                     }
-                    populatePlayerSelect(outPlayerSelect, {}, '-- Sélectionner --');
-                    populatePlayerSelect(assistSelect, {}, '-- Pas d\'assistance --');
                 }
             } else {
                 populatePlayerSelect(playerMainSelect, {}, '-- Sélectionner d\'abord l\'équipe --');
@@ -771,6 +848,111 @@
         teamSelect.addEventListener('change', updateFormFields);
 
         updateFormFields();
+
+        let lastEventsSignature = null;
+
+        function getEventStyle(eventType) {
+            switch (eventType) {
+                case 'goal':
+                case 'penalty_goal':
+                    return { bg: 'bg-green-900/50 border-green-500/30', icon: '⚽', text: 'text-green-300', label: 'BUT!' };
+                case 'own_goal':
+                    return { bg: 'bg-yellow-900/50 border-yellow-500/30', icon: '🥅', text: 'text-yellow-300', label: 'BUT C.S.C.' };
+                case 'yellow_card':
+                    return { bg: 'bg-yellow-900/50 border-yellow-500/30', icon: '🟨', text: 'text-yellow-300', label: 'Carton Jaune' };
+                case 'second_yellow':
+                    return { bg: 'bg-yellow-900/50 border-yellow-500/30', icon: '🟨🟨', text: 'text-yellow-300', label: 'Second Jaune' };
+                case 'red_card':
+                    return { bg: 'bg-red-900/50 border-red-500/30', icon: '🟥', text: 'text-red-300', label: 'Carton Rouge' };
+                case 'substitution_in':
+                    return { bg: 'bg-blue-900/50 border-blue-500/30', icon: '🔄', text: 'text-blue-300', label: 'Remplacement' };
+                case 'injury':
+                    return { bg: 'bg-purple-900/50 border-purple-500/30', icon: '⚕️', text: 'text-purple-300', label: 'Blessure' };
+                case 'penalty_missed':
+                    return { bg: 'bg-orange-900/50 border-orange-500/30', icon: '❌', text: 'text-orange-300', label: 'Penalty manqué' };
+                case 'big_chance_missed':
+                    return { bg: 'bg-orange-900/50 border-orange-500/30', icon: '😱', text: 'text-orange-300', label: 'Occasion manquée' };
+                default:
+                    return { bg: 'bg-gray-800/50 border-gray-600/30', icon: '•', text: 'text-gray-300', label: 'Événement' };
+            }
+        }
+
+        function renderEvents(events) {
+            const container = document.getElementById('event-history-list');
+            if (!container) return;
+
+            if (!events || events.length === 0) {
+                container.innerHTML = '<p class="text-gray-400 text-center py-6">Aucun événement enregistré pour le moment.</p>';
+                return;
+            }
+
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+            const html = events.map(event => {
+                const style = getEventStyle(event.event_type);
+                const teamBorder = event.is_home_team ? 'border-l-4 border-blue-500' : 'border-l-4 border-red-500';
+                const assistHtml = (event.event_type === 'goal' || event.event_type === 'penalty_goal') && event.assist_name
+                    ? `<div class="text-xs text-gray-300 mt-1">Assisté par ${event.assist_name}</div>`
+                    : '';
+                const outHtml = event.event_type === 'substitution_in' && event.out_player_name
+                    ? `<div class="text-xs text-gray-300 mt-1">Remplace ${event.out_player_name}</div>`
+                    : '';
+                const deleteUrl = EVENT_DELETE_URL_TEMPLATE.replace('EVENT_ID', event.id);
+
+                return `
+                    <div class="p-4 rounded-lg flex justify-between items-center ${style.bg} ${teamBorder}">
+                        <div class="flex items-center">
+                            <span class="font-mono text-gray-300 text-sm mr-3">${event.minute}'</span>
+                            <span class="${style.text} text-lg mr-2">${style.icon}</span>
+                            <div class="text-gray-100">
+                                <span class="font-medium ${style.text}">${style.label}</span>
+                                <span class="ml-1">${event.player_name}</span>
+                                ${assistHtml}
+                                ${outHtml}
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs text-gray-300">${event.team_short_name}</span>
+                            <form action="${deleteUrl}" method="POST" onsubmit="return confirm('Supprimer cet événement ?')">
+                                <input type="hidden" name="_token" value="${csrfToken}">
+                                <input type="hidden" name="_method" value="DELETE">
+                                <button type="submit" class="text-red-400 hover:text-red-300 p-1">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = html;
+        }
+
+        async function refreshEventsList() {
+            try {
+                const response = await fetch(EVENTS_LIST_URL, {
+                    headers: { 'Accept': 'application/json' },
+                });
+                if (!response.ok) {
+                    throw new Error('Erreur lors du chargement des événements.');
+                }
+
+                const data = await response.json();
+                if (!data?.success) {
+                    throw new Error('Réponse invalide.');
+                }
+
+                const signature = JSON.stringify(data.events || []);
+                if (signature !== lastEventsSignature) {
+                    lastEventsSignature = signature;
+                    renderEvents(data.events || []);
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        refreshEventsList();
+        setInterval(refreshEventsList, 8000);
     });
     
     // Activer la notification de synchronisation
@@ -835,7 +1017,6 @@
     
     // Synchronisation en temps réel avec le frontend
     function syncWithFrontend() {
-        console.log('Synchronisation avec le frontend...');
         // Cette fonction sera appelée après chaque mise à jour pour s'assurer
         // que les données sont synchronisées avec la vue publique
     }
