@@ -497,7 +497,7 @@
                     </h4>
                     <p class="text-gray-400 mb-2">Plateforme officielle de suivi du Tournoi Inter-Universitaire de Football.</p>
                     <p class="text-gray-300 font-semibold mt-4">Organisation :</p>
-                    <p class="text-gray-400">Bureau Départemental des Étudiants (BDDE) - ESTAM.</p>
+                    <p class="text-gray-400">Bureau Départemental des Étudiants (BDDE).</p>
                 </div>
 
                 {{-- 2. Navigation Rapide --}}
