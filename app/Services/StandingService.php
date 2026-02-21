@@ -22,6 +22,10 @@ class StandingService
             return;
         }
 
+        if (empty($match->group)) {
+            return;
+        }
+
         $homeTeam = $match->homeTeam;
         $awayTeam = $match->awayTeam;
 
