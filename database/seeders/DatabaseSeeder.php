@@ -19,15 +19,16 @@ class DatabaseSeeder extends Seeder
     
     public function run() : void
     {
-        User::create([
-            'name' => 'Admin',
-            'email' => 'emoukouanga@gmail.com',
-            'password' => Hash::make('AdminUCup2026'),
-            'email_verified_at' => now(),
-            'remember_token' => \Illuminate\Support\Str::random(5),
-            
-            // Ajoutez ici un rôle si vous utilisez un système de rôles (ex: 'role' => 'admin')
-        ]);
+        User::updateOrCreate(
+            ['email' => 'emoukouanga@gmail.com'],
+            [
+                'name' => 'Elmish',
+                'password' => Hash::make('AdminUCup2026'),
+                'email_verified_at' => now(),
+                'remember_token' => \Illuminate\Support\Str::random(5),
+                // Ajoutez ici un rôle si vous utilisez un système de rôles (ex: 'role' => 'admin')
+            ]
+        );
 
         // 1. Création des Universités
         $uni1 = University::create([
