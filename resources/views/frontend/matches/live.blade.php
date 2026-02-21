@@ -127,7 +127,7 @@
             font-size: 1.8rem;
         }
         .score-display {
-            font-size: 1rem;
+            font-size: 0.7rem;
             padding: 3px 5px;
         }
         .team-logo {
