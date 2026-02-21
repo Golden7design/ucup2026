@@ -22,6 +22,16 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # App files
 COPY . .
 
+# Ensure Laravel runtime dirs exist before Composer scripts run
+RUN mkdir -p \
+    /app/bootstrap/cache \
+    /app/storage/framework/cache \
+    /app/storage/framework/sessions \
+    /app/storage/framework/views \
+    /app/storage/logs \
+    && chown -R www-data:www-data /app/storage /app/bootstrap/cache \
+    && chmod -R ug+rwx /app/storage /app/bootstrap/cache
+
 # PHP deps
 RUN composer install --no-dev --optimize-autoloader --no-interaction
 
