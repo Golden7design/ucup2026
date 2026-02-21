@@ -34,6 +34,7 @@ storage/logs/
 # Fichiers de build frontend
 public/build/
 public/hot
+public/storage
 
 # Fichiers de test
 phpunit.xml
